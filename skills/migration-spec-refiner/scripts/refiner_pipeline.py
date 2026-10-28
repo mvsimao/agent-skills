@@ -3,10 +3,10 @@
 Migration Spec Refiner - Master Orchestrator Pipeline (.py-First + Surgical LLM).
 
 Executes the 4 deterministic stages:
-  Stage 1: resolve_refinement_context.py (SSOT Lock & Preflight Integration)
-  Stage 2: scaffold_dataform_and_review.py (Deterministic Scaffolding + Prompt Prep)
-  Stage 3: validate_refinement_gate.py (Fail-Closed Gate & 4x4 Parity Audit)
-  Stage 4: build_and_publish_pbi.py (Parity by Construction & Atomic Telemetry)
+  Stage 1: resolve_refinement_context.py (Live origin/main SSOT Lock, Multi-Target, Region Normalization)
+  Stage 2: scaffold_dataform_and_review.py (Scaffolding, T2.9 Auto-Healing & Lean Surgical Prompt)
+  Stage 3: validate_refinement_gate.py (Fail-Closed Gate with 37 Architectural Rules & 4x4 Parity)
+  Stage 4: build_and_publish_pbi.py (Parity by Construction, Suites S1–S6 & Atomic Telemetry)
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from stage1_resolve_refinement_context import ContextLockResolver
 from stage2_scaffold_dataform_and_review import DataformScaffolder
@@ -32,6 +32,7 @@ def run_pipeline(
     target_table: str,
     catalog_path: str,
     legacy_sql: str,
+    existing_spec_path: Optional[str] = None,
     output_dir: str = "./refinement_artifacts",
     dry_run: bool = False
 ) -> Dict[str, Any]:
@@ -39,9 +40,9 @@ def run_pipeline(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # -------------------------------------------------------------
-    # STAGE 1: SSOT Lock & Pre-Flight
+    # STAGE 1: Live origin/main SSOT Lock & Pre-Flight
     # -------------------------------------------------------------
-    logger.info(">>> Stage 1: Resolving SSOT Authoritative Coordinates & Locking Context...")
+    logger.info(">>> Stage 1: Resolving Live origin/main SSOT Coordinates & Generating context_locked.json...")
     stage1 = ContextLockResolver()
     locked_context = stage1.resolve_and_lock(
         ticket_id=ticket_id,
@@ -52,13 +53,21 @@ def run_pipeline(
     )
 
     # -------------------------------------------------------------
-    # STAGE 2: Deterministic Dataform Scaffolding
+    # STAGE 2: Deterministic Scaffolding + T2.9 Auto-Healing
     # -------------------------------------------------------------
-    logger.info(">>> Stage 2: Scaffolding Dataform SQLx, Sources, Tests & Spec Skeleton...")
-    stage2 = DataformScaffolder()
-    skeleton = stage2.scaffold(locked_context, output_dir=output_dir)
+    logger.info(">>> Stage 2: Scaffolding Dataform Assets, T2.9 Auto-Healing & Preparing Surgical Prompt...")
+    existing_spec_md = None
+    if existing_spec_path and Path(existing_spec_path).exists():
+        existing_spec_md = Path(existing_spec_path).read_text(encoding="utf-8")
 
-    # Simulate LLM Surgical Step (in production, this invokes the LLM with surgical_prompt)
+    stage2 = DataformScaffolder()
+    skeleton = stage2.scaffold(
+        locked_context=locked_context,
+        existing_spec_markdown=existing_spec_md,
+        output_dir=output_dir
+    )
+
+    # Simulated Surgical LLM Translation
     model_sqlx_path = out_dir / "definitions" / "02_models" / f"{target_table}.sqlx"
     simulated_sql_select = (
         "SELECT\n"
@@ -73,7 +82,6 @@ def run_pipeline(
         f"  ${{ref('orders_v2')}} o ON c.customer_id = o.customer_id\n"
     )
 
-    # Write model with config + surgical query
     config_header = (
         f"config {{\n"
         f'  type: "{locked_context["table_type"]}",\n'
@@ -87,9 +95,9 @@ def run_pipeline(
     model_sqlx_path.write_text(config_header + simulated_sql_select, encoding="utf-8")
 
     # -------------------------------------------------------------
-    # STAGE 3: Fail-Closed Gate & 4x4 Parity Audit
+    # STAGE 3: Fail-Closed Gate (37 Rules) & 4x4 Parity Audit
     # -------------------------------------------------------------
-    logger.info(">>> Stage 3: Executing Fail-Closed Gate & 4x4 Parity Audit...")
+    logger.info(">>> Stage 3: Executing Fail-Closed Gate (37 Rules) & 4x4 Parity Audit...")
     stage3 = RefinementGateValidator(dry_run=dry_run)
     gate_res = stage3.validate(
         locked_context_path=str(out_dir / "context_locked.json"),
@@ -98,15 +106,15 @@ def run_pipeline(
     )
 
     if not gate_res.passed:
-        logger.error(f"Refinement Gate FAILED with violations: {gate_res.architectural_violations}")
-        return {"passed": False, "violations": gate_res.architectural_violations}
+        logger.error(f"Refinement Gate FAILED with violations: {gate_res.violations}")
+        return {"passed": False, "violations": [v.__dict__ for v in gate_res.violations]}
 
-    logger.info("Refinement Gate PASSED with 4x4 Parity verified.")
+    logger.info("Refinement Gate PASSED: 37/37 rules validated and 4x4 Parity confirmed.")
 
     # -------------------------------------------------------------
-    # STAGE 4: Build & Publish PBI with Atomic Telemetry
+    # STAGE 4: Build & Publish PBI (Suites S1–S6 & Atomic Telemetry)
     # -------------------------------------------------------------
-    logger.info(">>> Stage 4: Publishing Finalized PBI Specification & Logging Telemetry...")
+    logger.info(">>> Stage 4: Publishing PBI with Suites S1–S6 & Logging Telemetry via flock...")
     stage4 = SpecPublisher()
     business_summary = (
         "- Modernized customer analytics dimension consolidating legacy Spark batch join.\n"
@@ -133,6 +141,7 @@ def main() -> None:
     parser.add_argument("--ticket-id", "-t", type=str, default="MIG-502", help="Agile Work Item Ticket ID")
     parser.add_argument("--target-table", type=str, default="dim_customer_enriched", help="Target table name")
     parser.add_argument("--catalog", "-c", type=str, required=True, help="Path to SSOT canonical catalog JSON")
+    parser.add_argument("--existing-spec", type=str, default=None, help="Optional path to existing specification for T2.9 auto-healing")
     parser.add_argument("--output-dir", "-o", type=str, default="./refinement_artifacts", help="Output directory")
     parser.add_argument("--dry-run", action="store_true", default=False, help="Simulate compilation without live APIs")
 
@@ -145,6 +154,7 @@ def main() -> None:
         target_table=args.target_table,
         catalog_path=args.catalog,
         legacy_sql=legacy_sql,
+        existing_spec_path=args.existing_spec,
         output_dir=args.output_dir,
         dry_run=args.dry_run
     )

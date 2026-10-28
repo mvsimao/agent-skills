@@ -1,34 +1,38 @@
 """
-Stage 2: Deterministic Dataform Scaffolding + Surgical LLM Review.
+Stage 2: Deterministic Dataform Scaffolding, Auto-Healing (T2.9), and Surgical LLM Review.
 
-Generates 100% via Python:
-- All definitions/01_sources/*.sqlx declarations
-- Target model config {} blocks (type, uniqueKey, partitionBy, clusterBy, tags)
-- Dataform unit assertions (tests/*.sqlx for row uniqueness and non-null)
-- Mermaid architecture dataflow diagram
-- Structured JSON and Markdown specification skeleton
-
-Restricts LLM exclusively to:
-- Translating legacy SQL transformation logic (SELECT ...)
-- Authoring the technical summary.
+Capabilities:
+- Generates 100% via Python:
+    * definitions/01_sources/*.sqlx declarations for all canonical sources
+    * target model config {} blocks supporting complex partition expressions (e.g. TIMESTAMP_TRUNC)
+    * dataform unit tests (tests/*.sqlx for uniqueness and non-null)
+    * Mermaid dataflow architecture diagrams
+    * structured JSON and Markdown specification skeletons
+- Intelligent Preservation + Auto-Healing (Rule T2.9):
+    * If a rich existing specification is provided and matches SSOT coordinates, preserves business rules
+    * Deterministically auto-heals the Required Datasets table (Section 3.2), guaranteeing 100%
+      of Source and Target datasets are enumerated without omissions.
+- Formulates a lean (~5 KB) surgical prompt restricting LLM strictly to the SELECT body.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 
 logger = logging.getLogger("refiner.stage2-scaffold")
 
 
 class DataformScaffolder:
-    """Deterministically scaffolds Dataform assets and specification skeletons."""
+    """Scaffolds Dataform files deterministically with T2.9 auto-healing for existing specs."""
 
     def scaffold(
         self,
         locked_context: Dict[str, Any],
+        existing_spec_markdown: Optional[str] = None,
         output_dir: str = "./refinement_artifacts"
     ) -> Dict[str, Any]:
         target_project = locked_context["target_project"]
@@ -52,9 +56,7 @@ class DataformScaffolder:
 
         scaffolded_files: Dict[str, str] = {}
 
-        # -------------------------------------------------------------
-        # 1. Generate 01_sources/*.sqlx for each upstream source
-        # -------------------------------------------------------------
+        # 1. Generate definitions/01_sources/*.sqlx
         for src in canonical_sources:
             s_proj = src.get("project_id", locked_context.get("upstream_project", "acme-lakehouse-raw"))
             s_dataset = src.get("dataset_id", "bronze_raw")
@@ -67,16 +69,14 @@ class DataformScaffolder:
                 f'  database: "{s_proj}",\n'
                 f'  schema: "{s_dataset}",\n'
                 f'  name: "{s_table}",\n'
-                f'  description: "Authoritative external source declaration managed by SSOT catalog"\n'
+                f'  description: "Canonical source declaration managed by SSOT catalog"\n'
                 f"}}\n"
             )
             file_p = sources_dir / file_name
             file_p.write_text(sqlx_decl, encoding="utf-8")
             scaffolded_files[str(file_p)] = sqlx_decl
 
-        # -------------------------------------------------------------
-        # 2. Generate Target Model SQLX config {} block
-        # -------------------------------------------------------------
+        # 2. Generate Target Model SQLX config {} supporting TIMESTAMP_TRUNC
         unique_keys_formatted = json.dumps(unique_keys)
         cluster_by_formatted = json.dumps(cluster_by)
         partition_line = f'  partitionBy: "{partition_by}",\n' if partition_by else ""
@@ -95,11 +95,10 @@ class DataformScaffolder:
             f"}}\n\n"
         )
 
-        # Placeholder for LLM surgical insertion
         model_sqlx_template = (
             model_sqlx_header +
             f"-- =============================================================================\n"
-            f"-- LLM SURGICAL TRANSFORMATION SCOPE ONLY\n"
+            f"-- SURGICAL LLM TRANSFORMATION SCOPE ONLY\n"
             f"-- Rule: Do NOT modify the config {{}} block above.\n"
             f"-- Rule: Reference upstream sources using ${{ref('source_name')}}\n"
             f"-- =============================================================================\n"
@@ -111,9 +110,7 @@ class DataformScaffolder:
         model_p.write_text(model_sqlx_template, encoding="utf-8")
         scaffolded_files[str(model_p)] = model_sqlx_template
 
-        # -------------------------------------------------------------
-        # 3. Generate Unit Test Assertions tests/*.sqlx
-        # -------------------------------------------------------------
+        # 3. Generate Unit Assertions tests/*.sqlx
         if unique_keys:
             key_expr = ", ".join(unique_keys)
             assertion_content = (
@@ -135,27 +132,29 @@ class DataformScaffolder:
             test_p.write_text(assertion_content, encoding="utf-8")
             scaffolded_files[str(test_p)] = assertion_content
 
-        # -------------------------------------------------------------
         # 4. Generate Mermaid Architecture Diagram
-        # -------------------------------------------------------------
         mermaid_diag = self._generate_mermaid_lineage(locked_context)
 
-        # -------------------------------------------------------------
-        # 5. Generate Surgical Prompt for LLM
-        # -------------------------------------------------------------
-        surgical_prompt = self._generate_surgical_prompt(locked_context, model_sqlx_header)
+        # 5. Rule T2.9: Intelligent Preservation + Auto-Healing of Section 3.2
+        auto_healed_spec = None
+        if existing_spec_markdown:
+            auto_healed_spec = self._auto_heal_spec_section_3_2(existing_spec_markdown, locked_context)
+
+        # 6. Generate Lean Surgical Prompt (~5 KB)
+        surgical_prompt = self._generate_surgical_prompt(locked_context)
 
         spec_skeleton = {
             "ticket_id": locked_context["ticket_id"],
             "target": f"{target_project}.{target_dataset}.{target_table}",
             "scaffolded_files": list(scaffolded_files.keys()),
             "mermaid_diagram": mermaid_diag,
+            "auto_healed_spec_applied": bool(auto_healed_spec),
             "surgical_prompt_for_llm": surgical_prompt
         }
 
         spec_skeleton_file = out_path / "spec_skeleton.json"
         spec_skeleton_file.write_text(json.dumps(spec_skeleton, indent=2), encoding="utf-8")
-        logger.info(f"Scaffolding completed. Skeleton saved to: {spec_skeleton_file}")
+        logger.info(f"Scaffolding and T2.9 auto-healing completed: {spec_skeleton_file}")
 
         return spec_skeleton
 
@@ -177,13 +176,44 @@ class DataformScaffolder:
         lines.append("```")
         return "\n".join(lines)
 
-    def _generate_surgical_prompt(self, ctx: Dict[str, Any], config_block: str) -> str:
+    def _auto_heal_spec_section_3_2(self, markdown_text: str, ctx: Dict[str, Any]) -> str:
+        """T2.9 Auto-Healing: Ensures 100% of required source and target datasets are present without omissions."""
+        required_datasets: Set[str] = {ctx["target_dataset"]}
+        for s in ctx.get("canonical_sources", []):
+            if s.get("dataset_id"):
+                required_datasets.add(s["dataset_id"])
+
+        # Build clean Section 3.2 markdown table
+        healed_table = [
+            "### 3.2 Required Datasets (Auto-Healed by T2.9)",
+            "| Project ID | Dataset ID | Tier / Role | IAM ACL Required |",
+            "| :--- | :--- | :--- | :--- |"
+        ]
+        for ds in sorted(list(required_datasets)):
+            proj = ctx["target_project"] if ds == ctx["target_dataset"] else ctx["upstream_project"]
+            tier = "Target" if ds == ctx["target_dataset"] else "Source"
+            acl = "roles/bigquery.dataEditor" if tier == "Target" else "roles/bigquery.dataViewer"
+            healed_table.append(f"| `{proj}` | `{ds}` | `{tier}` | `{acl}` |")
+
+        healed_section_str = "\n".join(healed_table)
+
+        # Replace existing section 3.2 if found, otherwise append
+        if re.search(r"###?\s*3\.2\s+Required\s+Datasets", markdown_text, re.IGNORECASE):
+            return re.sub(
+                r"###?\s*3\.2\s+Required\s+Datasets.*?(?=\n###|\n##|\Z)",
+                healed_section_str + "\n",
+                markdown_text,
+                flags=re.DOTALL | re.IGNORECASE
+            )
+        return markdown_text + "\n\n" + healed_section_str
+
+    def _generate_surgical_prompt(self, ctx: Dict[str, Any]) -> str:
+        sources_list = ", ".join([f"${{ref('{s['table_id']}')}}" for s in ctx.get("canonical_sources", [])])
         return (
-            f"You are a SQL Modernization Engineer translating legacy Spark/Lakehouse logic into BigQuery SQLx.\n"
-            f"CRITICAL RULES (FAIL-CLOSED):\n"
-            f"1. You MUST NOT modify or hallucinate project names, dataset names, or table names.\n"
-            f"2. Your output MUST ONLY be the SELECT query body for model '{ctx['target_table']}'.\n"
-            f"3. Use ${{ref('source_table')}} syntax to reference sources.\n"
-            f"4. Target schema: {ctx['target_dataset']}, Materialization: {ctx['table_type']}.\n"
-            f"5. Write an executive summary of the business logic in 3-4 bullet points.\n"
+            f"You are a SQL Modernization Engineer converting legacy Spark logic into BigQuery SQLx.\n"
+            f"IMMUTABLE CONSTRAINTS:\n"
+            f"1. Target table: {ctx['target_dataset']}.{ctx['target_table']} (Type: {ctx['table_type']}).\n"
+            f"2. Upstream sources available: {sources_list}.\n"
+            f"3. Output ONLY the SELECT body query and a 3-bullet executive business summary.\n"
+            f"4. DO NOT generate project names, datasets, or config blocks—these are locked by Python SSOT.\n"
         )

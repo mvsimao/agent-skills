@@ -1,68 +1,68 @@
 ---
 name: data-lineage-upstream-validator
 description: >-
-  Audits and validates upstream data lineage across 4 verification layers before migration pipelines
-  advance to development. Features a 6-layer cascaded legacy lineage discovery engine, Dataform wave
-  fallback with draft workspace guardrails, and agile backlog task dependency auditing.
+  Audits upstream data lineage across 4 verification layers before modernization pipelines advance
+  to development. Features multi-target extraction, Non-AS-IS consolidation awareness, SA Impersonation fallback,
+  Dataform wave fallback across sibling projects, a 6-layer legacy lineage resolver, and detection of 4 governance anomalies.
 ---
 
 # Data Lineage Upstream Validator
 
-A mission-critical data platform governance skill designed to prevent "phantom development"—where data engineers begin coding or refactoring pipelines only to discover days later that source tables do not exist, contracts are mismatched, or upstream jobs have not been migrated yet.
+A mission-critical data platform governance skill designed to prevent "phantom development"—where data engineers begin coding or refactoring models only to discover days later that source tables do not exist, contracts are mismatched, or upstream jobs have not been migrated yet.
 
 ```mermaid
 flowchart TD
-    SQL["Legacy Spark / SQL / Ingestion Script"] --> EX["Source & Target Extractor"]
-    EX -->|Upstream Reads| C1{"Layer 1: Live BigQuery DW?"}
-    C1 -->|Table & Rows Present| APP1["🟢 LIVE_VERIFIED"]
-    C1 -->|Missing in DW| C2{"Layer 2: Dataform Repo Contract?"}
+    SQL["Legacy Code: Spark / SQL / Ingestion"] --> EX["Extractor (Multi-Target & Non-AS-IS Aware)"]
+    EX -->|Upstream Reads| C1{"Layer 1: Live BigQuery DW (with SA Impersonation)?"}
+    C1 -->|Table & Rows Verified| APP1["🟢 LIVE_VERIFIED"]
+    C1 -->|Missing in DW| C2{"Layer 2: Dataform Primary & Sibling Repos?"}
     
     C2 -->|Merged in Main| APP2["🟢 DATAFORM_VALIDATED: Wave Clearance"]
     C2 -->|Draft Workspace Only| BLK1["🔴 UNSTARTED_PREDECESSOR: Local Draft Block"]
-    C2 -->|Missing in Repo| C3["Layer 3: 6-Layer Cascaded Legacy Lineage Resolver"]
+    C2 -->|Missing in Repos| C3["Layer 3: 6-Layer Cascaded Legacy Lineage Resolver"]
 
     C3 --> L1["1. Recursive View Expansion"]
-    C3 --> L2["2. Orchestration Job Graph"]
-    C3 --> L3["3. Ingestion Templates"]
+    C3 --> L2["2. Sovereign Job Graph & Overrides"]
+    C3 --> L3["3. Parameterized Ingestion Templates"]
     C3 --> L4["4. Recurring Writer Catalog Match"]
-    C3 --> L5["5. Static Metadata"]
+    C3 --> L5["5. Static Manifests"]
     C3 --> L6["6. AST & Regex Write Scanner"]
 
-    L1 & L2 & L3 & L4 & L5 & L6 --> PROD["Legacy Producer Job Discovered"]
-    PROD --> C4["Layer 4: Agile Backlog Task Auditor"]
-    C4 --> ANOM{"Link Anomaly Scan"}
-    ANOM -->|Inverted / Orphan / Generic Link| FIX["Remediation & Predecessor Prioritization"]
+    L1 & L2 & L3 & L4 & L5 & L6 --> PROD["Discovered Legacy Producer Job"]
+    PROD --> C4["Layer 4: Agile Task Graph & Backlog Auditor"]
+    C4 --> ANOM{"Audit 4 Governance Anomaly Classes"}
+    ANOM -->|INVERTED_LINK / UNLINKED / NO_PBI / OMITTED| FIX["Remediation & Predecessor Prioritization"]
 ```
 
 ---
 
 ## 🏛️ The 4 Verification Layers
 
-### Layer 1: Data Warehouse Live Physical Verification & Spec Alignment
+### Layer 1: Data Warehouse Live + SA Impersonation + Document Alignment
 - Queries BigQuery metadata for physical existence, `num_rows`, and partition update timestamps.
-- Asserts strict alignment between work item specifications and physical dataset assets.
+- **Service Account Impersonation Fallback:** If local credentials receive `403 Forbidden`, automatically cascades to the regional worker SA to verify actual table existence.
+- Compares work item specifications against declared `01_sources/*.sqlx` contracts.
 
-### Layer 2: Dataform Repository Contract Fallback (Wave Migrations)
-- In large-scale, multi-wave modernization programs, downstream pipelines are frequently refined while upstream pipelines are still in active PR or recently merged.
-- **`DATAFORM_VALIDATED`:** If the table is not yet materialized in BigQuery production, but its `.sqlx` declaration or table model is merged in the repository's default branch, the skill clears the pipeline for development.
+### Layer 2: Dataform Repository Fallback + Sibling Projects + Draft Guardrail
+- **Wave-Based Modernization:** If the table is not yet materialized in BigQuery production, but its `.sqlx` declaration or table model is merged in the default branch, the skill clears the pipeline (`DATAFORM_VALIDATED`).
+- **Sibling Project Support:** Inspects neighboring ingestion repositories and sibling Dataform projects.
 - **Draft Workspace Guardrail (`is_draft_workspace`):** Rejects unmerged local drafts from predecessor tasks, marking them as `UNSTARTED_PREDECESSOR` to prevent broken builds against uncommitted code.
 
 ### Layer 3: 6-Layer Cascaded Legacy Lineage Resolver (`resolve_legacy_lineage.py`)
 When an upstream table is physically missing in BigQuery, this engine automatically determines which legacy job produces it:
 1. **Recursive View Expansion:** Recursively unpacks Hive, Spark SQL, and Trino views to identify underlying physical tables.
-2. **Orchestration Job Graph:** Traverses dependency graphs (Airflow, Oozie, Control-M, Autosys) to match declared output datasets.
+2. **Sovereign Job Graph & Architectural Overrides:** Traverses dependency graphs (Airflow, Oozie, Control-M, Autosys) and applies sovereign architecture overrides for consolidated models.
 3. **Parameterized Ingestion Templates:** Scans generic database-to-lake ingestion configs (CDC/Sqoop/JDBC patterns).
-4. **Target Catalog Match with Recurring Writer Score:** Evaluates table name stems and execution frequency scores to rank likely writers.
+4. **Target Catalog Match with Recurring Writer Scoring:** Evaluates table name stems and execution frequency scores to rank likely writers.
 5. **Static Code Metadata:** Parses YAML/JSON pipeline definitions and metadata manifests.
 6. **AST & Regex Write Command Scanner:** Parses source code for physical write operations (`.saveAsTable`, `.insertInto`, `INSERT INTO`, `MERGE INTO`, `CREATE TABLE`).
 
-### Layer 4: Agile Task Graph & Backlog Auditor (`backlog_task_auditor.py`)
-- Cross-references the discovered legacy producer job against Jira/Azure DevOps migration backlogs.
-- Pinpoints the exact Predecessor Ticket that must be completed.
-- Detects link anomalies:
-  * **Inverted Dependencies:** When a predecessor incorrectly declares the downstream child as its blocker.
-  * **Orphan Predecessors:** When a pipeline consumes an upstream table produced by an active ticket that is unlinked on the agile board.
-  * **Generic Orchestrator False Links:** Identifies tickets erroneously linked to global scheduling DAGs (e.g., `daily_cron_master`) instead of the atomic component job.
+### Layer 4: Agile Backlog Auditor & The 4 Governance Anomaly Classes
+Cross-references discovered legacy producer jobs against Jira/Azure DevOps backlogs and automatically detects **4 classes of governance anomalies**:
+1. **`INVERTED_LINK`:** When a predecessor task is erroneously registered as a successor in the agile board (circular/inverted dependency).
+2. **`UNLINKED_PREDECESSOR`:** When a real code dependency exists in the backlog but is unlinked on the board.
+3. **`PREDECESSOR_WITHOUT_PBI`:** When an upstream table is produced by a legacy routine that does not yet have a card in the backlog.
+4. **`OMITTED_SOURCES`:** When sources physically read in legacy code were omitted in the ticket's documentation table.
 
 ---
 
@@ -73,56 +73,21 @@ When an upstream table is physically missing in BigQuery, this engine automatica
 python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
   --config /path/to/lineage_config.json \
   --output-md /path/to/lineage_report.md \
-  --output-json /path/to/lineage_report.json \
   --fail-on-missing
 ```
 
-### Dry-Run Mode
+### With SA Impersonation Fallback
+```bash
+python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
+  --config /path/to/lineage_config.json \
+  --impersonate-sa sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com \
+  --output-md /path/to/lineage_report.md
+```
+
+### Dry-Run Local Mode
 ```bash
 python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
   --config skills/data-lineage-upstream-validator/examples/sample_lineage_graph.json \
   --dry-run \
   --output-md /tmp/lineage_report.md
 ```
-
----
-
-## 📋 Input Configuration Schema (`lineage_config.json`)
-
-```json
-{
-  "ticket_id": "MIG-502",
-  "default_project": "acme-dwh-prod",
-  "code_text": "SELECT c.customer_id, c.customer_name, o.order_id FROM `acme-lakehouse-raw.bronze_erp.customers` c LEFT JOIN `acme-dwh-prod.silver_orders.orders` o ON c.id = o.customer_id",
-  "explicit_targets": [
-    "acme-dwh-prod.gold_analytics.dim_customer_enriched"
-  ],
-  "dataform_repo_path": "/path/to/dataform-repo",
-  "is_draft_workspace": false,
-  "legacy_context": {
-    "views": {},
-    "job_graph": {},
-    "target_catalog": []
-  },
-  "backlog_items": [
-    {
-      "ticket_id": "MIG-480",
-      "summary": "Migrate ERP Customers to Bronze BigLake",
-      "status": "IN_PROGRESS",
-      "legacy_jobs": ["legacy_spark_erp_ingestion"],
-      "target_tables": ["customers"],
-      "predecessor_tickets": []
-    }
-  ]
-}
-```
-
----
-
-## 📦 Output Artifacts
-
-The validator generates an executive dependency clearance report detailing:
-1. **Lineage Boundaries:** Clean separation between read sources and write targets.
-2. **Upstream Verification Status:** BigQuery physical live checks and Dataform wave contract statuses.
-3. **Legacy Producer Resolution:** Cascaded discovery layer, producer job name, and confidence score.
-4. **Agile Dependency Actions:** Targeted predecessor ticket priorities and detected link anomalies.

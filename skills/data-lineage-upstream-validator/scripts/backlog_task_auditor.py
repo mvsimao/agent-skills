@@ -1,29 +1,28 @@
 """
 Layer 4: Task Graph and Migration Backlog Auditor.
 
-Cross-references discovered legacy producer jobs with project management tickets (Jira / Azure DevOps),
-identifying:
-- Exactly which Predecessor Ticket must be prioritized before this pipeline can begin.
-- Link anomalies:
-    * Inverted links (child depends on parent incorrectly inverted)
-    * Orphan predecessor tickets (referenced ticket was deleted or closed without delivery)
-    * False links to generic orchestrators (e.g. linked to daily_cron_master rather than the producer pipeline)
+Detects 4 distinct classes of governance anomalies:
+1. INVERTED_LINK: Predecessor task is erroneously declared as a successor in the agile board.
+2. UNLINKED_PREDECESSOR: Discovered code dependency exists in the backlog, but is not linked to the current card.
+3. PREDECESSOR_WITHOUT_PBI: Table is produced by a legacy routine that has no corresponding ticket in the backlog yet.
+4. OMITTED_SOURCES: Sources physically read in legacy code that were omitted in the ticket's documentation.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 
 logger = logging.getLogger("lineage-validator.backlog")
 
 
 @dataclass
-class BacklogLinkAnomaly:
-    anomaly_type: str  # INVERTED_DEPENDENCY, ORPHAN_PREDECESSOR, GENERIC_ORCHESTRATOR_LINK
+class BacklogGovernanceAnomaly:
+    anomaly_type: str  # INVERTED_LINK, UNLINKED_PREDECESSOR, PREDECESSOR_WITHOUT_PBI, OMITTED_SOURCES
     ticket_id: str
     predecessor_id: Optional[str] = None
+    affected_resource: str = ""
     description: str = ""
     suggested_action: str = ""
 
@@ -34,12 +33,12 @@ class PredecessorRecommendation:
     producer_job: str
     predecessor_ticket_id: Optional[str]
     ticket_status: str  # TO_DO, IN_PROGRESS, MERGED, UNMAPPED
-    link_anomalies: List[BacklogLinkAnomaly] = field(default_factory=list)
+    link_anomalies: List[BacklogGovernanceAnomaly] = field(default_factory=list)
     action_item: str = ""
 
 
 class BacklogTaskAuditor:
-    """Audits task dependencies, linking producer jobs to migration backlog items."""
+    """Audits task dependencies, detecting all 4 classes of governance anomalies."""
 
     GENERIC_ORCHESTRATOR_PATTERNS = ["daily_cron", "master_dag", "orchestration_wrapper", "global_scheduler"]
 
@@ -47,7 +46,9 @@ class BacklogTaskAuditor:
         self,
         current_ticket_id: str,
         missing_tables_producers: List[Dict[str, str]],
-        backlog_items: List[Dict[str, Any]]
+        backlog_items: List[Dict[str, Any]],
+        physically_extracted_sources: Optional[List[str]] = None,
+        documented_sources: Optional[List[str]] = None
     ) -> List[PredecessorRecommendation]:
         recommendations: List[PredecessorRecommendation] = []
         backlog_map = {item.get("ticket_id"): item for item in backlog_items if item.get("ticket_id")}
@@ -63,58 +64,83 @@ class BacklogTaskAuditor:
         current_item = backlog_map.get(current_ticket_id, {})
         declared_predecessors = current_item.get("predecessor_tickets", [])
 
+        # Check Anomaly 4: OMITTED_SOURCES
+        if physically_extracted_sources is not None and documented_sources is not None:
+            phys_set = {s.lower().split(".")[-1] for s in physically_extracted_sources}
+            doc_set = {s.lower().split(".")[-1] for s in documented_sources}
+            omitted = phys_set - doc_set
+            for o_tbl in omitted:
+                recommendations.append(
+                    PredecessorRecommendation(
+                        required_table=o_tbl,
+                        producer_job="code_extractor",
+                        predecessor_ticket_id=None,
+                        ticket_status="DOCUMENTATION_OMISSION",
+                        link_anomalies=[
+                            BacklogGovernanceAnomaly(
+                                anomaly_type="OMITTED_SOURCES",
+                                ticket_id=current_ticket_id,
+                                affected_resource=o_tbl,
+                                description=f"Source table '{o_tbl}' is physically read in legacy code but omitted from card's specification.",
+                                suggested_action=f"Auto-heal card specification to include '{o_tbl}' in Section 3.2 (Required Sources)."
+                            )
+                        ],
+                        action_item=f"Add '{o_tbl}' to card documented source dependencies."
+                    )
+                )
+
+        # Audit missing producers against backlog
         for missing in missing_tables_producers:
             tbl = missing.get("table_name", "")
             producer_job = missing.get("producer_job", "")
-            anomalies: List[BacklogLinkAnomaly] = []
+            anomalies: List[BacklogGovernanceAnomaly] = []
 
-            # 1. Match producer job to backlog ticket
             matched_ticket_id = job_to_ticket.get(producer_job.lower()) or job_to_ticket.get(tbl.lower())
-            
-            # Check for generic orchestrator false link
-            for gen in self.GENERIC_ORCHESTRATOR_PATTERNS:
-                if gen in producer_job.lower():
-                    anomalies.append(
-                        BacklogLinkAnomaly(
-                            anomaly_type="GENERIC_ORCHESTRATOR_LINK",
-                            ticket_id=current_ticket_id,
-                            description=f"Producer job '{producer_job}' is a generic wrapper/scheduler. Needs deep drilldown to find atomic pipeline ticket.",
-                            suggested_action="Decouple wrapper from backlog and link directly to underlying component pipeline ticket."
-                        )
-                    )
 
-            ticket_status = "UNMAPPED"
             if matched_ticket_id:
                 ticket_info = backlog_map.get(matched_ticket_id, {})
                 ticket_status = ticket_info.get("status", "TO_DO")
 
-                # Check if current ticket declared this predecessor
-                if matched_ticket_id not in declared_predecessors:
-                    anomalies.append(
-                        BacklogLinkAnomaly(
-                            anomaly_type="ORPHAN_PREDECESSOR",
-                            ticket_id=current_ticket_id,
-                            predecessor_id=matched_ticket_id,
-                            description=f"Current card '{current_ticket_id}' requires '{tbl}' from '{matched_ticket_id}', but ticket is NOT declared as predecessor in agile board.",
-                            suggested_action=f"Add '{matched_ticket_id}' as blocking predecessor of '{current_ticket_id}' in Jira/DevOps."
-                        )
-                    )
-
-                # Check for inverted dependency
+                # Anomaly 1: INVERTED_LINK
                 if current_ticket_id in ticket_info.get("predecessor_tickets", []):
                     anomalies.append(
-                        BacklogLinkAnomaly(
-                            anomaly_type="INVERTED_DEPENDENCY",
+                        BacklogGovernanceAnomaly(
+                            anomaly_type="INVERTED_LINK",
                             ticket_id=current_ticket_id,
                             predecessor_id=matched_ticket_id,
-                            description=f"Circular / Inverted Link: Predecessor '{matched_ticket_id}' declares current ticket '{current_ticket_id}' as its predecessor!",
-                            suggested_action=f"Reverse link direction: '{matched_ticket_id}' must precede '{current_ticket_id}'."
+                            affected_resource=tbl,
+                            description=f"Inverted Dependency: Predecessor ticket '{matched_ticket_id}' has current card '{current_ticket_id}' registered as predecessor!",
+                            suggested_action=f"Invert relationship: '{matched_ticket_id}' must block '{current_ticket_id}', not vice versa."
                         )
                     )
 
-                action = f"Prioritize predecessor ticket '{matched_ticket_id}' (Current status: {ticket_status}) to unblock table '{tbl}'."
+                # Anomaly 2: UNLINKED_PREDECESSOR
+                if matched_ticket_id not in declared_predecessors:
+                    anomalies.append(
+                        BacklogGovernanceAnomaly(
+                            anomaly_type="UNLINKED_PREDECESSOR",
+                            ticket_id=current_ticket_id,
+                            predecessor_id=matched_ticket_id,
+                            affected_resource=tbl,
+                            description=f"Unlinked Predecessor: Pipeline consumes '{tbl}' produced by '{matched_ticket_id}', but ticket is unlinked on board.",
+                            suggested_action=f"Link '{matched_ticket_id}' as blocking predecessor of '{current_ticket_id}'."
+                        )
+                    )
+
+                action = f"Prioritize predecessor ticket '{matched_ticket_id}' (Status: {ticket_status}) to unblock table '{tbl}'."
             else:
-                action = f"No backlog ticket found for legacy producer '{producer_job}'. Create a new migration card for '{producer_job}'."
+                # Anomaly 3: PREDECESSOR_WITHOUT_PBI
+                anomalies.append(
+                    BacklogGovernanceAnomaly(
+                        anomaly_type="PREDECESSOR_WITHOUT_PBI",
+                        ticket_id=current_ticket_id,
+                        affected_resource=tbl,
+                        description=f"Missing PBI: Legacy producer routine '{producer_job}' does not have any corresponding migration card in the backlog.",
+                        suggested_action=f"Create a new migration PBI for producer job '{producer_job}' to deliver table '{tbl}'."
+                    )
+                )
+                action = f"Create new migration card for legacy producer '{producer_job}'."
+                ticket_status = "UNMAPPED"
 
             recommendations.append(
                 PredecessorRecommendation(

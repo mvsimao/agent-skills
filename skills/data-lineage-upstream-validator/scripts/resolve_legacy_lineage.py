@@ -1,10 +1,10 @@
 """
-6-Layer Cascaded Legacy Lineage Resolver.
+6-Layer Cascaded Legacy Lineage Resolver with Sovereign Graph & Architectural Overrides.
 
 When an upstream table is physically missing in BigQuery, this resolver automatically discovers
 which legacy pipeline / Spark job / ingestion flow is responsible for producing it by cascading through:
   Layer 1: Recursive View Expansion (Hive / Spark SQL / Trino views)
-  Layer 2: Legacy Job Orchestration Graph (Airflow DAGs, Oozie, Control-M, Autosys)
+  Layer 2: Sovereign Job Graph + Architectural Overrides (Airflow DAGs, Oozie, Control-M, Autosys)
   Layer 3: Parameterized Ingestion Templates (generic JDBC/CDC framework configs)
   Layer 4: Target Catalog Exact / Stem Match with Recurring Writer Score
   Layer 5: Static Code Metadata (YAML/JSON pipeline manifests)
@@ -27,16 +27,17 @@ logger = logging.getLogger("lineage-validator.resolver")
 class ProducerDiscovery:
     target_table: str
     discovered_producer_job: str
-    resolution_layer: str  # 1_VIEW_EXPANSION, 2_JOB_GRAPH, 3_INGESTION_TEMPLATE, 4_CATALOG_MATCH, 5_STATIC_METADATA, 6_AST_REGEX_SCAN
+    resolution_layer: str  # 1_VIEW_EXPANSION, 2_SOVEREIGN_JOB_GRAPH, 3_INGESTION_TEMPLATE, 4_CATALOG_MATCH, 5_STATIC_METADATA, 6_AST_REGEX_SCAN
     confidence_score: float  # 0.0 to 1.0
     underlying_source_tables: List[str] = field(default_factory=list)
+    architecture_override_applied: bool = False
     evidence_file: Optional[str] = None
     line_number: Optional[int] = None
     details: str = ""
 
 
 class LegacyLineageResolver:
-    """Cascading 6-layer lineage resolver for missing upstream tables."""
+    """Cascading 6-layer lineage resolver for missing upstream tables with architectural overrides."""
 
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
@@ -48,6 +49,20 @@ class LegacyLineageResolver:
     ) -> Optional[ProducerDiscovery]:
         table_name = missing_table.split(".")[-1].lower()
 
+        # Check Architectural Overrides first (Layer 2 extension)
+        overrides = legacy_context.get("architecture_overrides", {})
+        if table_name in overrides:
+            override_meta = overrides[table_name]
+            return ProducerDiscovery(
+                target_table=table_name,
+                discovered_producer_job=override_meta.get("target_pipeline", f"modernized_{table_name}"),
+                resolution_layer="2_SOVEREIGN_JOB_GRAPH",
+                confidence_score=1.0,
+                underlying_source_tables=override_meta.get("inputs", []),
+                architecture_override_applied=True,
+                details=f"Target pipeline resolved via explicit sovereign architecture override: '{override_meta.get('reason', 'Consolidated model')}'."
+            )
+
         # -------------------------------------------------------------
         # LAYER 1: Recursive View Expansion
         # -------------------------------------------------------------
@@ -56,7 +71,7 @@ class LegacyLineageResolver:
             return view_match
 
         # -------------------------------------------------------------
-        # LAYER 2: Legacy Job Orchestration Dependency Graph
+        # LAYER 2: Sovereign Job Graph
         # -------------------------------------------------------------
         job_graph_match = self._layer2_job_graph(table_name, legacy_context.get("job_graph", {}))
         if job_graph_match:
@@ -109,22 +124,20 @@ class LegacyLineageResolver:
         return None
 
     def _layer2_job_graph(self, table_name: str, job_graph: Dict[str, Any]) -> Optional[ProducerDiscovery]:
-        # job_graph schema: { "dag_id / job_id": { "outputs": ["table_a", "table_b"], "inputs": [...] } }
         for job_id, meta in job_graph.items():
             outputs = [o.lower().split(".")[-1] for o in meta.get("outputs", [])]
             if table_name in outputs:
                 return ProducerDiscovery(
                     target_table=table_name,
                     discovered_producer_job=job_id,
-                    resolution_layer="2_JOB_GRAPH",
+                    resolution_layer="2_SOVEREIGN_JOB_GRAPH",
                     confidence_score=0.95,
                     underlying_source_tables=meta.get("inputs", []),
-                    details=f"Discovered in orchestration DAG/Job '{job_id}' with declared output '{table_name}'."
+                    details=f"Discovered in sovereign DAG/Job graph '{job_id}' with declared output '{table_name}'."
                 )
         return None
 
     def _layer3_ingestion_templates(self, table_name: str, templates: List[Dict[str, Any]]) -> Optional[ProducerDiscovery]:
-        # Ingestion frameworks often map source RDBMS tables to target landing/bronze via templates
         for tpl in templates:
             table_pattern = tpl.get("table_pattern", "")
             framework_job = tpl.get("framework_job_name", "generic-rdbms-ingestor")
@@ -140,7 +153,6 @@ class LegacyLineageResolver:
         return None
 
     def _layer4_catalog_match(self, table_name: str, catalog: List[Dict[str, Any]]) -> Optional[ProducerDiscovery]:
-        # Stem and exact matches with recurring writer score
         best_candidate = None
         highest_score = 0.0
 
@@ -150,7 +162,6 @@ class LegacyLineageResolver:
             frequency = entry.get("execution_frequency", "daily")
             write_count = entry.get("recurring_write_count", 1)
 
-            # Score computation
             score = 0.0
             if cat_table == table_name:
                 score = 0.85 + min(write_count * 0.02, 0.10)
@@ -192,7 +203,6 @@ class LegacyLineageResolver:
         if not p.exists():
             return None
 
-        # Regex write patterns in Spark/SQL files
         patterns = [
             (re.compile(r"saveAsTable\([\"'](?:[a-zA-Z0-9_\-]+\.)?" + re.escape(table_name) + r"[\"']\)", re.IGNORECASE), 0.75),
             (re.compile(r"insertInto\([\"'](?:[a-zA-Z0-9_\-]+\.)?" + re.escape(table_name) + r"[\"']\)", re.IGNORECASE), 0.75),
@@ -201,7 +211,6 @@ class LegacyLineageResolver:
             (re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:[a-zA-Z0-9_\-]+\.)?" + re.escape(table_name) + r"\b", re.IGNORECASE), 0.65),
         ]
 
-        # Scan python/sql files in legacy codebase
         for code_file in p.glob("**/*"):
             if code_file.suffix in [".py", ".sql", ".scala", ".hql"]:
                 try:
@@ -216,7 +225,7 @@ class LegacyLineageResolver:
                                     confidence_score=conf,
                                     evidence_file=str(code_file),
                                     line_number=idx,
-                                    details=f"Found code write operation '{pat.pattern}' in file '{code_file.name}' at line {idx}."
+                                    details=f"Found code write operation in file '{code_file.name}' at line {idx}."
                                 )
                 except Exception as e:
                     logger.debug(f"Scan error in {code_file}: {e}")

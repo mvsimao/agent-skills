@@ -1,11 +1,12 @@
 """
-Source vs Target Table Extractor.
+Source vs Target Table Extractor (Multi-Target & Non-AS-IS Consolidation Aware).
 
-Separates upstream read dependencies from target write tables without false positives.
-Supports:
-- Pure external ingestion pipelines (JDBC/APIs/Kafka) with 0 upstream DW tables.
-- Standard SQL / PySpark transformation pipelines.
-- DML and temporary view filtering.
+Capabilities:
+- Strictly separates upstream read dependencies from target write tables without false positives.
+- Supports multi-target pipelines (e.g. intermediate staging + final conformed table in the same job).
+- Supports pure external ingestion flows (JDBC/REST/Kafka) with 0 upstream DW tables.
+- Recognizes Non-AS-IS architectural consolidations: filters out legacy intermediate tables that
+  have been merged or retired in the target architecture, preventing false blocker panics.
 """
 
 from __future__ import annotations
@@ -17,15 +18,16 @@ from typing import List, Set, Dict, Optional, Any
 
 @dataclass
 class LineageExtractionResult:
-    pipeline_type: str  # EXTERNAL_INGESTION, DW_TRANSFORMATION, HYBRID
+    pipeline_type: str  # EXTERNAL_INGESTION, DW_TRANSFORMATION, MULTI_TARGET, HYBRID
     upstream_sources: List[Dict[str, str]] = field(default_factory=list)
     target_tables: List[Dict[str, str]] = field(default_factory=list)
+    retired_consolidated_tables: List[str] = field(default_factory=list)
     external_sources: List[Dict[str, Any]] = field(default_factory=list)
     intermediate_ctes: List[str] = field(default_factory=list)
 
 
 class SourceTargetExtractor:
-    """Robust extractor separating read sources from write targets."""
+    """Extractor separating read sources from write targets with multi-target and consolidation awareness."""
 
     READ_PATTERNS = [
         re.compile(r"FROM\s+[`\"']?([a-zA-Z0-9_\-\.]+)[`\"']?", re.IGNORECASE),
@@ -49,12 +51,16 @@ class SourceTargetExtractor:
         self,
         code_text: str,
         explicit_targets: Optional[List[str]] = None,
+        non_as_is_consolidations: Optional[Dict[str, str]] = None,  # e.g. {"legacy_stage_tmp": "dim_customer_enriched"}
         default_project: str = "acme-dwh-prod"
     ) -> LineageExtractionResult:
         ctes = self._extract_cte_names(code_text)
         targets = set(explicit_targets or [])
         sources = set()
         external_sources = []
+        retired_tables = []
+
+        consolidations = {k.lower(): v for k, v in (non_as_is_consolidations or {}).items()}
 
         # 1. Detect External Ingestion endpoints
         for m in self.JDBC_PATTERN.finditer(code_text):
@@ -73,13 +79,25 @@ class SourceTargetExtractor:
         for pat in self.READ_PATTERNS:
             for m in pat.finditer(code_text):
                 tbl = m.group(1).strip().strip("`").strip('"')
+                tbl_lower = tbl.lower()
+
                 # Filter out CTEs, subquery aliases, functions, and target tables
-                if tbl and tbl.lower() not in ctes and tbl not in targets:
-                    if not self._is_keyword_or_function(tbl):
-                        sources.add(tbl)
+                if tbl and tbl_lower not in ctes and tbl not in targets:
+                    if self._is_keyword_or_function(tbl):
+                        continue
+                    
+                    # Non-AS-IS check: if this legacy intermediate was retired/merged into target
+                    clean_name = tbl_lower.split(".")[-1]
+                    if clean_name in consolidations:
+                        retired_tables.append(f"{tbl} (Retired/Merged into '{consolidations[clean_name]}')")
+                        continue
+
+                    sources.add(tbl)
 
         # 4. Classify pipeline type
-        if external_sources and not sources:
+        if len(targets) > 1:
+            pipeline_type = "MULTI_TARGET"
+        elif external_sources and not sources:
             pipeline_type = "EXTERNAL_INGESTION"
         elif sources and targets:
             pipeline_type = "DW_TRANSFORMATION"
@@ -93,6 +111,7 @@ class SourceTargetExtractor:
             pipeline_type=pipeline_type,
             upstream_sources=formatted_sources,
             target_tables=formatted_targets,
+            retired_consolidated_tables=sorted(retired_tables),
             external_sources=external_sources,
             intermediate_ctes=sorted(list(ctes))
         )
@@ -110,7 +129,7 @@ class SourceTargetExtractor:
     def _is_keyword_or_function(self, token: str) -> bool:
         keywords = {
             "select", "where", "unnest", "generate_date_array", "values",
-            "lateral", "window", "qualify", "group", "order", "having"
+            "lateral", "window", "qualify", "group", "order", "having", "from", "join"
         }
         return token.lower() in keywords
 
