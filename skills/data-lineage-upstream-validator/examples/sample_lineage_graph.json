@@ -1,0 +1,46 @@
+{
+  "ticket_id": "MIG-502",
+  "default_project": "acme-dwh-prod",
+  "code_text": "SELECT c.customer_id, c.customer_name, o.order_id, r.risk_tier FROM `acme-lakehouse-raw.bronze_erp_customers.raw_customers` c LEFT JOIN `acme-dwh-prod.silver_orders_cleansed.orders_v2` o ON c.customer_id = o.customer_id LEFT JOIN `acme-lakehouse-raw.bronze_risk_lake.country_risk_matrix` r ON c.country_code = r.country_iso",
+  "explicit_targets": [
+    "acme-dwh-prod.gold_customer_analytics.dim_customer_enriched"
+  ],
+  "is_draft_workspace": false,
+  "legacy_context": {
+    "views": {
+      "country_risk_matrix": "SELECT iso_code, risk_level AS risk_tier FROM ext_risk_geography WHERE active = 1"
+    },
+    "job_graph": {
+      "legacy_batch_risk_aggregator": {
+        "inputs": ["raw_geopolitical_feed"],
+        "outputs": ["country_risk_matrix", "country_compliance_score"]
+      }
+    },
+    "target_catalog": [
+      {
+        "table_name": "country_risk_matrix",
+        "writer_job": "legacy_batch_risk_aggregator",
+        "execution_frequency": "daily",
+        "recurring_write_count": 5
+      }
+    ]
+  },
+  "backlog_items": [
+    {
+      "ticket_id": "MIG-502",
+      "summary": "Modernize Customer Enriched Dimension to BigQuery + Dataform",
+      "status": "REFINEMENT",
+      "legacy_jobs": ["legacy-spark-customer-enrichment"],
+      "target_tables": ["dim_customer_enriched"],
+      "predecessor_tickets": []
+    },
+    {
+      "ticket_id": "MIG-480",
+      "summary": "Migrate Risk Lake Country Matrix to Bronze BigLake",
+      "status": "IN_PROGRESS",
+      "legacy_jobs": ["legacy_batch_risk_aggregator"],
+      "target_tables": ["country_risk_matrix"],
+      "predecessor_tickets": []
+    }
+  ]
+}

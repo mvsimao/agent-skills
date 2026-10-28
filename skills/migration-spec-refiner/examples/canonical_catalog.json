@@ -1,0 +1,33 @@
+{
+  "canonical_projects": {
+    "target": "acme-dwh-prod",
+    "upstream": "acme-lakehouse-raw",
+    "secrets": "acme-security-vault",
+    "staging": "acme-sandbox-tmp"
+  },
+  "service_accounts": {
+    "dataform": "sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com"
+  },
+  "git_repo_url": "https://github.com/acme-data-platform/dataform-core-warehouse.git",
+  "tables": {
+    "dim_customer_enriched": {
+      "dataset_id": "gold_customer_analytics",
+      "type": "incremental",
+      "unique_keys": ["customer_id"],
+      "partition_by": "DATE(processed_at)",
+      "cluster_by": ["customer_id", "country_code"]
+    }
+  },
+  "canonical_sources": [
+    {
+      "project_id": "acme-lakehouse-raw",
+      "dataset_id": "bronze_erp_customers",
+      "table_id": "raw_customers"
+    },
+    {
+      "project_id": "acme-dwh-prod",
+      "dataset_id": "silver_orders_cleansed",
+      "table_id": "orders_v2"
+    }
+  ]
+}

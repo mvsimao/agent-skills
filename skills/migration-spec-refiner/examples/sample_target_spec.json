@@ -1,0 +1,16 @@
+{
+  "ticket_id": "MIG-502",
+  "target": "acme-dwh-prod.gold_customer_analytics.dim_customer_enriched",
+  "materialization": "incremental",
+  "unique_keys": ["customer_id"],
+  "partition_by": "DATE(processed_at)",
+  "cluster_by": ["customer_id", "country_code"],
+  "upstream_dependencies": [
+    "acme-lakehouse-raw.bronze_erp_customers.raw_customers",
+    "acme-dwh-prod.silver_orders_cleansed.orders_v2"
+  ],
+  "assertions": [
+    "tests/assert_unique_dim_customer_enriched.sqlx"
+  ],
+  "status": "APPROVED_BY_GATE"
+}

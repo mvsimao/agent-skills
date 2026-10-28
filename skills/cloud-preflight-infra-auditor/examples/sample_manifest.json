@@ -1,0 +1,77 @@
+{
+  "pipeline_name": "customer-360-feature-mart",
+  "archetype": "SQL_TRANSFORMATION",
+  "projects": {
+    "target": "acme-dwh-prod",
+    "upstream": "acme-lakehouse-raw",
+    "secrets": "acme-security-vault",
+    "staging": "acme-sandbox-tmp"
+  },
+  "service_accounts": [
+    "sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com"
+  ],
+  "datasets": [
+    {
+      "project_id": "acme-dwh-prod",
+      "dataset_id": "gold_customer_analytics",
+      "layer": "gold"
+    },
+    {
+      "project_id": "acme-dwh-prod",
+      "dataset_id": "silver_orders_cleansed",
+      "layer": "silver"
+    },
+    {
+      "project_id": "acme-lakehouse-raw",
+      "dataset_id": "bronze_erp_customers",
+      "layer": "bronze"
+    }
+  ],
+  "buckets": [
+    {
+      "bucket_name": "acme-lakehouse-raw-iceberg-data",
+      "layer_purpose": "ICEBERG_WAREHOUSE",
+      "project_id": "acme-lakehouse-raw"
+    },
+    {
+      "bucket_name": "acme-dwh-prod-dataform-staging",
+      "layer_purpose": "STAGING",
+      "project_id": "acme-dwh-prod"
+    }
+  ],
+  "secrets": [
+    {
+      "secret_name": "sftp-legacy-extract-key",
+      "project_id": "acme-security-vault"
+    }
+  ],
+  "external_tables": [
+    {
+      "project_id": "acme-dwh-prod",
+      "dataset_id": "bronze_manual_sources",
+      "table_id": "ext_territory_mapping",
+      "source_type": "GOOGLE_SHEETS",
+      "drive_uri": "https://docs.google.com/spreadsheets/d/1SAMPLE_SPREADSHEET_KEY_ACME_MAPPING_001/edit"
+    }
+  ],
+  "dml_target_tables": [
+    {
+      "project_id": "acme-dwh-prod",
+      "dataset_id": "gold_customer_analytics",
+      "table_id": "dim_customer_scd2"
+    }
+  ],
+  "network_endpoints": [
+    {
+      "name": "Legacy Oracle CRM",
+      "host": "oracle-crm.internal.acme.corp",
+      "port": 1521,
+      "protocol": "JDBC"
+    }
+  ],
+  "git_repo_url": "https://github.com/acme-data-platform/dataform-core-warehouse.git",
+  "legacy_code_snippets": [
+    "df = spark.read.format('parquet').load('gs://acme-lakehouse-raw-iceberg-data/crm/customers')",
+    "jdbc_url = 'jdbc:oracle:thin:@oracle-crm.internal.acme.corp:1521/PRODCRM'"
+  ]
+}
