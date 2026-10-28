@@ -1,0 +1,26 @@
+[
+  {
+    "ticket_id": "MIG-502",
+    "summary": "Modernize Customer Enriched Dimension to BigQuery + Dataform",
+    "status": "REFINEMENT",
+    "legacy_jobs": ["legacy-spark-customer-enrichment"],
+    "target_tables": ["dim_customer_enriched"],
+    "predecessor_tickets": ["MIG-480"]
+  },
+  {
+    "ticket_id": "MIG-480",
+    "summary": "Migrate Risk Lake Country Matrix to Bronze BigLake",
+    "status": "IN_PROGRESS",
+    "legacy_jobs": ["legacy_batch_risk_aggregator"],
+    "target_tables": ["country_risk_matrix"],
+    "predecessor_tickets": []
+  },
+  {
+    "ticket_id": "MIG-420",
+    "summary": "Migrate ERP Customer Master to Bronze",
+    "status": "DONE",
+    "legacy_jobs": ["erp_customer_sync"],
+    "target_tables": ["raw_customers"],
+    "predecessor_tickets": []
+  }
+]
