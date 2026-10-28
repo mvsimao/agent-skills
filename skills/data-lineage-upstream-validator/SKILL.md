@@ -12,26 +12,26 @@ A mission-critical data platform governance skill designed to prevent "phantom d
 
 ```mermaid
 flowchart TD
-    SQL[Legacy Spark / SQL / Ingestion Script] --> EX[Source & Target Extractor]
-    EX -->|Upstream Reads| C1{Layer 1: Live BigQuery DW?}
-    C1 -->|Table & Rows Present| APP1[🟢 LIVE_VERIFIED]
-    C1 -->|Missing in DW| C2{Layer 2: Dataform Repo Contract?}
+    SQL["Legacy Spark / SQL / Ingestion Script"] --> EX["Source & Target Extractor"]
+    EX -->|Upstream Reads| C1{"Layer 1: Live BigQuery DW?"}
+    C1 -->|Table & Rows Present| APP1["🟢 LIVE_VERIFIED"]
+    C1 -->|Missing in DW| C2{"Layer 2: Dataform Repo Contract?"}
     
-    C2 -->|Merged in Main| APP2[🟢 DATAFORM_VALIDATED: Wave Clearance]
-    C2 -->|Draft Workspace Only| BLK1[🔴 UNSTARTED_PREDECESSOR: Local Draft Block]
-    C2 -->|Missing in Repo| C3[Layer 3: 6-Layer Cascaded Legacy Lineage Resolver]
+    C2 -->|Merged in Main| APP2["🟢 DATAFORM_VALIDATED: Wave Clearance"]
+    C2 -->|Draft Workspace Only| BLK1["🔴 UNSTARTED_PREDECESSOR: Local Draft Block"]
+    C2 -->|Missing in Repo| C3["Layer 3: 6-Layer Cascaded Legacy Lineage Resolver"]
 
-    C3 --> L1[1. Recursive View Expansion]
-    C3 --> L2[2. Orchestration Job Graph]
-    C3 --> L3[3. Ingestion Templates]
-    C3 --> L4[4. Recurring Writer Catalog Match]
-    C3 --> L5[5. Static Metadata]
-    C3 --> L6[6. AST & Regex Write Scanner]
+    C3 --> L1["1. Recursive View Expansion"]
+    C3 --> L2["2. Orchestration Job Graph"]
+    C3 --> L3["3. Ingestion Templates"]
+    C3 --> L4["4. Recurring Writer Catalog Match"]
+    C3 --> L5["5. Static Metadata"]
+    C3 --> L6["6. AST & Regex Write Scanner"]
 
-    L1 & L2 & L3 & L4 & L5 & L6 --> PROD[Legacy Producer Job Discovered]
-    PROD --> C4[Layer 4: Agile Backlog Task Auditor]
-    C4 --> ANOM{Link Anomaly Scan}
-    ANOM -->|Inverted / Orphan / Generic Link| FIX[Remediation & Predecessor Prioritization]
+    L1 & L2 & L3 & L4 & L5 & L6 --> PROD["Legacy Producer Job Discovered"]
+    PROD --> C4["Layer 4: Agile Backlog Task Auditor"]
+    C4 --> ANOM{"Link Anomaly Scan"}
+    ANOM -->|Inverted / Orphan / Generic Link| FIX["Remediation & Predecessor Prioritization"]
 ```
 
 ---

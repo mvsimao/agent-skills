@@ -1,7 +1,7 @@
 # 🚀 Autonomous Data Platform Modernization Suite
-### Enterprise Agent Skills for Cloud Lakehouse Modernization: Databricks (Spark/Delta) ➔ GCP BigQuery + Dataform + Airflow
+### Enterprise AI Agent Skills: Databricks (Spark / Delta) ➔ GCP BigQuery + Dataform + Airflow
 
-[![Architecture](https://img.shields.io/badge/Architecture-.py--First%20%2B%20Surgical%20LLM-blue.svg)](#-arquitetura-da-solução)
+[![Architecture](https://img.shields.io/badge/Architecture-.py--First%20%2B%20Surgical%20LLM-blue.svg)](#-solution-architecture)
 [![GCP Native](https://img.shields.io/badge/GCP-BigQuery%20%7C%20Dataform%20%7C%20Airflow-orange.svg)](#)
 [![Source Platform](https://img.shields.io/badge/Migrated%20From-Databricks%20Lakehouse-red.svg)](#)
 [![Compliance](https://img.shields.io/badge/Sanitization-100%25%20Agnostic%20%26%20Compliant-green.svg)](#)
@@ -9,130 +9,132 @@
 
 ---
 
-## Executive Summary & Motivação Real de Engenharia
+## 📌 Executive Summary & Engineering Motivation
 
-Modernizar milhares de pipelines de dados de um ecossistema **Databricks (Spark / Delta Lakehouse)** para uma arquitetura moderna e serverless na **Google Cloud Platform (BigQuery + Dataform + Cloud Composer/Airflow)** é um dos projetos de engenharia de dados mais complexos e estratégicos em escala corporativa.
+Modernizing thousands of legacy data pipelines from a **Databricks (Spark / Delta Lakehouse)** environment to a serverless, cloud-native architecture on **Google Cloud Platform (BigQuery + Dataform + Cloud Composer / Airflow)** is one of the most demanding enterprise engineering initiatives.
 
-### A Origem: Por que esta suíte foi construída?
-A motivação direta para o desenvolvimento desta suíte foi **substituir uma esteira legada de automação composta por ~10 Agent Skills baseadas puramente em prompts e chamadas encadeadas de LLMs** que operava na migração Databricks ➔ GCP. 
+### The Genesis: Why This Suite Was Built
+This repository represents the architectural evolution of a real-world enterprise modernization program. The direct motivation was **replacing an initial automation chain consisting of ~10 agent skills based purely on prompt-chaining and LLMs**.
 
-No início da iniciativa, a tentativa de delegar a extração de linhagem, validação de pré-requisitos de infraestrutura e geração de código SQLx inteiramente a agentes LLM revelou graves gargalos práticos:
-- O encadeamento de 10 skills dependentes de prompts sofria com **altíssima latência** e **consumo explosivo de tokens**.
-- O LLM frequentemente **alucinava nomes de projetos e datasets** no BigQuery e inventava colunas ou fontes fantasmas.
-- Falsos bloqueios eram frequentes porque o LLM não distinguia permissões de IAM restritas na conta do runner local de recursos inexistentes na nuvem.
-- Divergências recorrentes entre o card técnico documentado e o código `.sqlx` compilado geravam retrabalho contínuo de engenharia.
+In the initial implementation, delegating infrastructure preflight, lineage resolution, and SQLx generation entirely to LLM prompts revealed catastrophic production failure modes:
+1. **Prompt-Chaining Latency & Cost:** Chaining 10 LLM invocations generated massive token consumption (35k–60k tokens per specification) and execution timeouts (6 to 12 minutes per pipeline).
+2. **Coordinate & Source Hallucinations:** LLMs frequently modified or hallucinated GCP project IDs, BigQuery dataset names, or column projections (e.g., transforming `raw_customers` into `raw_customers_v1` or mapping it to the wrong cloud project), breaking Dataform compilations.
+3. **False Blockers from IAM Blindness:** The prompt-based agent could not distinguish between a missing cloud asset (`404 Not Found`) and restricted local runner permissions (`403 Forbidden`), halting the backlog triage.
+4. **Document vs. Code Desynchronization:** Documentation cards (Jira/Azure DevOps) frequently diverged from the actual `.sqlx` code generated, creating lingering technical debt.
 
-Para solucionar esses desafios na raiz, a arquitetura foi completamente redesenhada: **as 10 skills puramente conceituais de LLM foram consolidadas nesta suíte de 3 Agent Skills industriais**, orientadas pelo paradigma **`.py`-First + LLM Cirúrgico**. Nela, todo o determinismo, resolução de linhagem, inspeção de infraestrutura e garantia de paridade são executados 100% via código Python soberano, restringindo o uso do LLM exclusivamente à tradução semântica de queries SQL e redação de resumos executivos.
+To solve this at the root, the architecture was re-engineered around the **`.py`-First + Surgical LLM** paradigm. In this approach:
+- **100% of discovery, infrastructure inspection, lineage graph resolution, scaffolding, and parity verification is executed by deterministic Python tools.**
+- **The LLM is strictly isolated to the surgical scope of business SQL transformation logic (`SELECT ...`) and writing executive summaries.**
 
 > [!NOTE]
-> **Contexto de Benchmark Real:** Todas as métricas de impacto, reduções de lead time e ganhos de paridade apresentados neste documento são **comparações empíricas reais** obtidas diretamente na esteira de migração Databricks ➔ GCP contra o baseline anterior de 10 skills baseadas puramente em LLMs.
+> **Empirical Real-World Benchmark:** All performance metrics, token savings, and parity numbers reported below are **empirical measurements** captured during an enterprise Databricks ➔ GCP modernization program, benchmarked directly against the previous 10 pure-LLM skills baseline.
 
 ---
 
-## 🏛️ Arquitetura da Solução: O Paradigma `.py`-First + LLM Cirúrgico
+## 🏛️ Solution Architecture: The `.py`-First + Surgical LLM Paradigm
 
 ```mermaid
 flowchart TD
-    subgraph INGRESS["1. Ingestão & SSOT Lock (Python Soberano)"]
-        LEGACY[Legado: PySpark / Hive / SQL / DAGs]
-        CATALOG[Dicionário Canônico SSOT]
-        LOCK[stage1_resolve_refinement_context.py]
-        LOCKED_JSON[(context_locked.json)]
+    subgraph INGRESS["1. Ingestion & SSOT Lock (Deterministic Python)"]
+        LEGACY["Legacy Code: Spark / SQL / DAGs"]
+        CATALOG["SSOT Canonical Catalog"]
+        LOCK["stage1_resolve_refinement_context.py"]
+        LOCKED_JSON[("context_locked.json")]
         
         LEGACY & CATALOG --> LOCK --> LOCKED_JSON
     end
 
-    subgraph PREFLIGHT["2. Pré-Voo Preventivo (Zero Falso Positivo)"]
-        LOCKED_JSON --> SKILL1[cloud-preflight-infra-auditor\n6 Pilares Cloud & IaC]
-        LOCKED_JSON --> SKILL2[data-lineage-upstream-validator\n4 Camadas + Fallback Dataform]
+    subgraph PREFLIGHT["2. Shift-Left Preflight Checks (Zero False Positives)"]
+        LOCKED_JSON --> SKILL1["cloud-preflight-infra-auditor\n6 Cloud & IaC Pillars"]
+        LOCKED_JSON --> SKILL2["data-lineage-upstream-validator\n4 Layers + Dataform Fallback"]
         
-        SKILL1 -->|404 Not Found| BLK1[🔴 Bloco IaC: Gera Terraform]
-        SKILL1 -->|403 Forbidden| WRN1[🟡 Nota Técnica: Runner Restrito]
-        SKILL2 -->|Upstream Missing| LIN6[Cascata 6 Camadas de Resolução]
+        SKILL1 -->|404 Not Found| BLK1["🔴 Hard Blocker: Generates Terraform"]
+        SKILL1 -->|403 Forbidden| WRN1["🟡 Technical Note: Restricted Runner"]
+        SKILL2 -->|Upstream Missing| LIN6["6-Layer Cascaded Lineage Resolver"]
     end
 
-    subgraph SCAFFOLD["3. Scaffolding Determinístico (100% Python)"]
-        LOCKED_JSON --> SCAF[stage2_scaffold_dataform_and_review.py]
-        SCAF --> SRC[definitions/01_sources/*.sqlx]
-        SCAF --> CFG[Target model config {}]
-        SCAF --> TST[tests/*.sqlx Unit Assertions]
-        SCAF --> SKELETON[spec_skeleton.json & Diagrama Mermaid]
+    subgraph SCAFFOLD["3. Deterministic Scaffolding (100% Python)"]
+        LOCKED_JSON --> SCAF["stage2_scaffold_dataform_and_review.py"]
+        SCAF --> SRC["definitions/01_sources/*.sqlx"]
+        SCAF --> CFG["Target Model SQLx Config Block"]
+        SCAF --> TST["tests/*.sqlx Unit Assertions"]
+        SCAF --> SKELETON["spec_skeleton.json & Mermaid Flow"]
     end
 
-    subgraph SURGICAL_LLM["4. Atuação Cirúrgica do LLM (Escopo Isolado)"]
-        SKELETON --> LLM[LLM Agent: Tradução de SELECT & Resumo Executivo]
+    subgraph SURGICAL_LLM["4. Surgical LLM Scope (Isolated Context)"]
+        SKELETON --> LLM["LLM Agent: Query Body SELECT & Executive Summary ONLY"]
     end
 
-    subgraph GATE["5. Fail-Closed Gate & Paridade 4x4 (Python Soberano)"]
-        LLM --> GATE_VAL[stage3_validate_refinement_gate.py]
-        GATE_VAL --> AUTO_RESTORE[Auto-Restaura Coordenadas Violadas]
-        GATE_VAL --> CHECK_REFS[Bloqueia Fontes Fantasmas ou Paths Hardcoded]
-        GATE_VAL --> P4X4{Auditoria de Paridade 4x4}
+    subgraph GATE["5. Fail-Closed Gate & 4x4 Parity (Deterministic Python)"]
+        LLM --> GATE_VAL["stage3_validate_refinement_gate.py"]
+        GATE_VAL --> AUTO_RESTORE["Auto-Restore Altered Coordinates"]
+        GATE_VAL --> CHECK_REFS["Enforce ${ref(...)} & Block Phantom Sources"]
+        GATE_VAL --> P4X4{"4x4 Parity Audit"}
         
-        P4X4 -->|Catálogo == JSON == SQLx == Card| PASS[Aprovado com 100% Paridade]
-        P4X4 -->|Divergência| FAIL[Fail-Closed: Halts Pipeline]
+        P4X4 -->|Catalog == JSON == SQLx == Card| PASS["Approved with 100% Parity"]
+        P4X4 -->|Mismatch Detected| FAIL["Fail-Closed: Halts Execution"]
     end
 
-    subgraph PUBLISH["6. Paridade por Construção & Telemetria"]
-        PASS --> PUB[stage4_build_and_publish_pbi.py]
-        PUB --> PBI_MD[Card Técnico PBI_<ID>_spec.md]
-        PUB --> TLM[(telemetry_run.jsonl com flock)]
+    subgraph PUBLISH["6. Parity by Construction & Atomic Telemetry"]
+        PASS --> PUB["stage4_build_and_publish_pbi.py"]
+        PUB --> PBI_MD["PBI_<ID>_spec.md Technical Spec"]
+        PUB --> TLM[("telemetry_run.jsonl with flock")]
     end
 ```
 
 ---
 
-## 💥 O Problema Real de Engenharia em Migrações de Larga Escala
+## 💥 The Real Engineering Problems in Scale Modernization
 
-Em esteiras de modernização que abrangem de centenas a milhares de tabelas e jobs, as abordagens convencionais assistidas por IA falham sistematicamente devido a 5 patologias de engenharia:
+When migrating large lakehouses (1,000+ tables and ETL jobs), prompt-only AI architectures fail systematically:
 
-1. **Alucinação de Coordenadas Cloud:** O LLM inventa ou altera sutilmente nomes de projetos GCP, datasets ou tabelas (ex: `raw_customer` vira `raw_customers_v1` ou assume o projeto errado), quebrando a compilação no Dataform.
-2. **Dessincronização Documento vs. Código:** Especificações técnicas em cards (Jira/DevOps) descrevem uma lista de tabelas de origem, enquanto o código `.sqlx` consome fontes diferentes, gerando débitos técnicos crônicos.
-3. **Falsos Bloqueios na Triagem (Confusão 404 vs 403):** Runners de automação falham por falta de permissão local de leitura em recursos existentes, registrando incorretamente que o dataset ou secret não existe na Cloud.
-4. **Dependências Upstream Ocultas e "Desenvolvimento Fantasma":** Engenheiros começam a codificar modelos antes de saber se as tabelas upstream já foram migradas ou quem as gera no legado, gerando branches bloqueadas por semanas.
-5. **Cadeias Fragmentadas de Prompts (Prompt-Chaining Fragility):** Pipelines compostos por 8 a 12 chamadas sucessivas de LLM acumulam erros estocásticos, gastam milhões de tokens desnecessários e apresentam altíssima latência.
+1. **Cloud Coordinate Hallucination:** LLMs alter schema paths, datasets, or table names, causing failed Dataform compilations and broken downstream DAGs.
+2. **Doc-to-Code Desynchronization:** Agile task cards document one set of upstream tables, while the generated code reads from different sources.
+3. **Triage Halting from IAM Blindness:** Automation runners fail on permission checks (`403 Forbidden`) and falsely classify resources as missing, paralyzing migration squads.
+4. **Phantom Development from Unmapped Upstreams:** Developers spend sprint time coding models before realizing that upstream tables do not yet exist in the modern data warehouse.
+5. **Prompt-Chaining Brittleness:** Multi-stage prompt pipelines accumulate stochastic drift, high token costs, and compounding latency.
 
 ---
 
-## 📈 Impacto Prático em Produção (Benchmark Real Databricks ➔ GCP)
+## 📈 Practical Production Impact (Empirical Benchmark: Databricks ➔ GCP)
 
-As métricas apresentadas abaixo não são projeções teóricas: são **dados empíricos colhidos diretamente na esteira de migração Databricks ➔ GCP**, comparando o desempenho da arquitetura anterior (**10 Agent Skills baseadas puramente em prompts e LLMs**) contra a nova arquitetura (**3 Agent Skills `.py`-First + LLM Cirúrgico**):
+The metrics below represent real-world results measured on an enterprise migration pipeline:
 
-| Dimensão de Engenharia | Baseline Anterior (10 Skills Puramente LLM) | Nova Arquitetura (`.py`-First + LLM Cirúrgico) | Impacto Real Mensurado |
+| Engineering Dimension | Previous Baseline (10 Pure-LLM Skills) | New Architecture (`.py`-First + Surgical LLM) | Measured Impact |
 | :--- | :--- | :--- | :--- |
-| **Consolidação de Pipeline** | Esteira fragmentada de **10 etapas** dependentes de prompts encadeados | **3 Skills unificadas** com 4 ferramentas Python determinísticas | **Eliminação de 60% dos estágios e superfície de falha** |
-| **Consumo de Tokens** | De 35k a 60k tokens por especificação técnica (prompts inflados) | **~10k a 14k tokens** (contexto cirúrgico restrito apenas ao `SELECT`) | **Redução média de ~70% em custo de inferência** |
-| **Latência por Especificação** | 6 a 12 minutos por pipeline (esperas sequenciais de inferência) | **45 a 90 segundos** (processamento `.py` sub-segundo + 1 call de LLM) | **Aceleração de ~8x no throughput de refinamento** |
-| **Paridade e Alucinações** | 15% a 30% das specs apresentavam divergência entre card e `.sqlx` | **0% (100% de Paridade por Construção com `context_locked.json`)** | **Zero retrabalho por coordenadas inexistentes** |
-| **Auditoria Cloud (Falso Bloqueio)** | Frequente paralisia de esteira por erro 403 no runner local | **Classificação determinística `404` (MISSING) vs `403` (RESTRICTED)** | **Zero falsos positivos e zero falsos negativos** |
-| **Gargalos de SRE / IaC** | Impedimentos de IAM descobertos apenas após PR ou deploy | **Geração automática de Terraform e CLI no pré-voo preventivo** | **Shift-left total: infraestrutura pronta antes do código** |
-| **Migrações por Ondas (*Waves*)**| Bloqueio obrigatório caso a tabela física não estivesse no BigQuery | **Aprovação por contrato Dataform mergeado (`DATAFORM_VALIDATED`)** | **Eliminação do bloqueio sequencial entre times paralelos** |
+| **Pipeline Consolidation** | Fragile chain of **10 sequential prompt-dependent skills** | **3 unified skills** driven by 4 deterministic Python stages | **60% reduction in stages & failure surface** |
+| **Token Consumption** | 35k to 60k tokens per specification (inflated prompts) | **~10k to 14k tokens** (context strictly isolated to `SELECT`) | **~70% cost reduction in model inference** |
+| **Refinement Latency** | 6 to 12 minutes per pipeline specification | **45 to 90 seconds** (sub-second `.py` logic + single LLM call) | **~8x speedup in specification throughput** |
+| **Coordinate Parity** | 15% to 30% of specs had discrepancies with SQLx | **0% (100% Parity by Construction via `context_locked.json`)** | **Zero rework from hallucinated coordinates** |
+| **Cloud Audit Accuracy** | Frequent false blockers caused by local 403 errors | **Deterministic classification: `404` (MISSING) vs `403` (RESTRICTED)** | **Zero false positives & zero false negatives** |
+| **SRE / IaC Shift-Left** | Missing IAM/datasets only discovered at deployment | **Automated Terraform & CLI remediation generated in preflight** | **Infrastructure resolved before engineering begins** |
+| **Wave Migrations** | Hard block if the physical table was not yet in DW | **Contract fallback via merged Dataform repo (`DATAFORM_VALIDATED`)** | **Continuous parallel wave execution** |
 
 ---
 
-## 🧰 A Suíte de 3 Agent Skills
+## 🧰 The 3 Agent Skills Suite
 
 ```
 skills/
-├── cloud-preflight-infra-auditor/       # Auditoria de Infraestrutura Cloud & IaC (6 Pilares)
-├── data-lineage-upstream-validator/     # Auditoria de Linhagem Upstream (4 Camadas & Cascata)
-└── migration-spec-refiner/              # Orquestrador de Refinamento Técnico (.py-First)
+├── cloud-preflight-infra-auditor/       # Cloud & IaC Readiness Auditor (6 Pillars)
+├── data-lineage-upstream-validator/     # Upstream Lineage Auditor (4 Layers & 6-Layer Cascaded Resolver)
+└── migration-spec-refiner/              # Spec Refinement Orchestrator (.py-First Architecture)
 ```
 
 ---
 
 ### 1. `cloud-preflight-infra-auditor`
-*Auditoria preventiva de prontidão de infraestrutura Cloud/IaC nos 6 pilares de governança.*
+*Preventive infrastructure readiness and cloud audit across 6 pillars before refinement or deployment.*
 
-- **Pilar 1 — Projetos Cloud, Service Accounts & Smoke Query:** Valida status `ACTIVE` dos projetos, existência de Service Accounts de processamento e executa *Smoke Query* (`SELECT 1`) no BigQuery para atestar APIs habilitadas, faturamento e cotas de execução (`bigquery.jobs.create`).
-- **Pilar 2 — Datasets & IAM ACL Cross-Project:** Audita existência dos datasets em todas as camadas (`bronze_*`, `silver_*`, `gold_*`, `staging_*`) e inspeciona permissões cross-project (`roles/bigquery.dataViewer`). Emite blocos Terraform (`google_bigquery_dataset_iam_member`) e comandos `bq` para autorremediação imediata.
-- **Pilar 3 — Secret Manager & Governança por Arquétipo:** Pipelines puramente SQL (Dataform) rodam no engine do BigQuery sem acesso a segredos em runtime (não bloqueante). Segredos só bloqueiam pipelines de Ingestão externa ou Egress.
-- **Pilar 4 — Object Storage (GCS Buckets) & Separação de Camadas:** Verifica buckets `gs://` e assegura segregação entre tabelas gerenciadas (Iceberg/Raw com versionamento) e buckets de staging (com expiração de 14 dias).
-- **Pilar 5 — Fontes Externas (Drive/Sheets), Git & Tabelas DML-Only:** Executa probe real (`SELECT 1 ... LIMIT 1`) para interceptar erros `403 Drive credentials` gerando instruções para a SA; valida repositório Git de destino e preexistência de tabelas operadas exclusivamente via `MERGE`.
-- **Pilar 6 — Conectividade de Rede Externa (VPC / Cloud NAT):** Identifica endpoints JDBC/APIs e descobre o IP público de saída do Cloud NAT para cadastro em regras de firewall corporativo.
-- **Matriz Determinística:** Separa `404 Not Found` (`🔴 MISSING_INFRA` - bloqueio real) de `403 Forbidden` na conta do runner local (`🟡 EXISTS_RESTRICTED_RUNNER` - nota informativa sem paralisar o pipeline).
+- **Pillar 1 — Cloud Projects, Service Accounts & Smoke Query:** Asserts `ACTIVE` state across Target (`acme-dwh-prod`), Upstream (`acme-lakehouse-raw`), Secrets, and Staging projects; validates Service Account status; runs a live BigQuery `SELECT 1` smoke query to verify APIs, billing, and job creation quotas (`bigquery.jobs.create`).
+- **Pillar 2 — Datasets & Cross-Project IAM ACLs:** Inspects data tiers (`bronze_*`, `silver_*`, `gold_*`, `staging_*`) and checks cross-project IAM read policies (`roles/bigquery.dataViewer`). Emits copyable **Terraform (`google_bigquery_dataset_iam_member`)** and CLI commands for automated remediation.
+- **Pillar 3 — Secret Manager & Archetype Governance:** Pure SQL transformation pipelines (Dataform ELT) execute inside BigQuery without runtime vault credentials. Secret references are classified as non-blocking warnings. Ingestion/Egress pipelines require an active secret with an `ENABLED` version.
+- **Pillar 4 — Object Storage (GCS Buckets) & Tiering:** Verifies physical GCS buckets and enforces layer separation: managed lakehouse storage (Iceberg/Parquet with object versioning) vs. ephemeral staging buckets (14-day auto-deletion lifecycle).
+- **Pillar 5 — External Sources (Drive/Sheets), Git Repos & DML Targets:** Executes probe query (`SELECT 1 ... LIMIT 1`) on external spreadsheet tables to catch `403 Drive credentials` errors, generating SA sharing instructions. Validates target Git repositories and pre-creates DML-only (`MERGE`) target tables.
+- **Pillar 6 — Network Connectivity (VPC, Cloud NAT & Egress):** Scans JDBC/API endpoints, executes socket handshakes from sandbox runners, and discovers the outbound Cloud NAT IP for enterprise firewall whitelisting.
+- **Deterministic Matrix:** Distinguishes `404 Not Found` (`🔴 MISSING_INFRA` - blocking) from `403 Forbidden` on the operator runner (`🟡 EXISTS_RESTRICTED_RUNNER` - non-blocking technical note).
 
-#### Execução Rápida:
+#### Quick CLI Execution:
 ```bash
 python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
   --manifest skills/cloud-preflight-infra-auditor/examples/sample_manifest.json \
@@ -143,21 +145,21 @@ python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
 ---
 
 ### 2. `data-lineage-upstream-validator`
-*Auditoria profunda de linhagem upstream com motor de resolução em cascata de 6 camadas.*
+*Deep upstream data lineage audit with a 6-layer cascaded legacy lineage resolution engine.*
 
-- **Separação Leitura vs. Escrita:** Extrai dependências sem falsos positivos, identificando fontes upstream puras e suportando fluxos de ingestão externa com 0 tabelas no DW.
-- **Camada 1 (Data Warehouse Live):** Valida contagem de linhas (`num_rows`) e última modificação diretamente no BigQuery.
-- **Camada 2 (Fallback Dataform em Ondas com Guardrail de Rascunho):** Em migrações em ondas (*waves*), aprova o desenvolvimento se o contrato `.sqlx` já foi mergeado na branch principal (`DATAFORM_VALIDATED`), mas bloqueia rascunhos locais não mergeados (`UNSTARTED_PREDECESSOR`).
-- **Camada 3 (Resolução de Linhagem Legada em 6 Camadas - `resolve_legacy_lineage.py`):** Quando uma tabela inexiste, descobre automaticamente quem a produz varrendo em cascata:
-  1. *Expansão Recursiva de Views* (Hive/Spark SQL)
-  2. *Grafo de Dependências de Jobs de Orquestração* (Airflow, Oozie)
-  3. *Templates Parametrizados de Ingestão* (CDC/Frameworks genéricos)
-  4. *Catálogo de Targets com Score de Escritor Recorrente*
-  5. *Metadados Estáticos de Código* (YAML/JSON)
-  6. *Varredura AST/Regex de Escrita* (`.saveAsTable`, `INSERT INTO`, `MERGE INTO`, `CREATE TABLE`)
-- **Camada 4 (Auditoria do Grafo de Tarefas/Backlog):** Cruza o job produtor com os cards do Jira/DevOps, detectando anomalias de vínculo (*links invertidos*, *predecessores órfãos* ou *vínculos falsos com orquestradores globais*).
+- **Strict Read vs. Write Extraction:** Extracts lineage boundaries without false positives, supporting pure external ingestion flows (JDBC/APIs) with zero upstream data warehouse tables.
+- **Layer 1 (Live Data Warehouse):** Checks physical existence, row counts (`num_rows`), and partition timestamps in BigQuery.
+- **Layer 2 (Dataform Repository Fallback in Waves):** For wave-based modernization, if a table is not yet in production but its `.sqlx` declaration is merged into the default branch, the skill clears the pipeline (`DATAFORM_VALIDATED`). The `is_draft_workspace` guardrail blocks unmerged local drafts (`UNSTARTED_PREDECESSOR`).
+- **Layer 3 (6-Layer Cascaded Legacy Lineage Resolver):** When an upstream table is physically missing, this engine cascades through 6 resolution layers:
+  1. *Recursive View Expansion* (Hive / Spark SQL / Trino views)
+  2. *Orchestration Job Graphs* (Airflow, Oozie DAGs)
+  3. *Parameterized Ingestion Templates* (CDC / generic framework configurations)
+  4. *Target Catalog Match with Recurring Writer Scoring*
+  5. *Static Code Metadata* (YAML / JSON manifests)
+  6. *AST & Regex Write Scanner* (`.saveAsTable`, `INSERT INTO`, `MERGE INTO`, `CREATE TABLE`)
+- **Layer 4 (Agile Task Graph & Backlog Auditor):** Matches the discovered legacy producer job to the migration board (Jira/Azure DevOps), pinpointing the exact predecessor ticket to prioritize and detecting link anomalies (*inverted dependencies*, *orphan predecessors*, or *false generic orchestrator links*).
 
-#### Execução Rápida:
+#### Quick CLI Execution:
 ```bash
 python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
   --config skills/data-lineage-upstream-validator/examples/sample_lineage_graph.json \
@@ -168,22 +170,22 @@ python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
 ---
 
 ### 3. `migration-spec-refiner`
-*Orquestrador de refinamento técnico industrial (.py-First + LLM Cirúrgico).*
+*Industrial refinement orchestrator based on the `.py`-First + Surgical LLM architecture.*
 
-Substitui prompts longos e imprevisíveis por 4 etapas Python determinísticas:
+Replaces prompt-only fragility with 4 deterministic Python stages:
 
-1. **`stage1_resolve_refinement_context.py` (SSOT Lock & Pre-Flight):** Resolve projetos, datasets, repositórios e gera o artefato imutável `context_locked.json` antes de qualquer chamada ao LLM, disparando os pré-voos de infraestrutura e linhagem.
-2. **`stage2_scaffold_dataform_and_review.py` (Scaffolding Determinístico):** Gera 100% via Python:
-   - Declarações `definitions/01_sources/*.sqlx`
-   - Configurações `config {}` com chaves primárias, particionamento e clustering
-   - Testes unitários `tests/assert_unique_*.sqlx`
-   - Diagramas Mermaid de linhagem
-   - Prompt cirúrgico isolado restringindo o LLM apenas ao corpo `SELECT`.
-3. **`stage3_validate_refinement_gate.py` (Fail-Closed Gate & Paridade 4x4):** Auto-restaura qualquer coordenada adulterada pelo LLM, valida regras contra anti-patterns (como projetos GCP hardcoded no SQL) e audita **Paridade 4x4**:
-   $$\text{Catálogo SSOT} \equiv \text{Especificação JSON} \equiv \text{Código SQLx Compilado} \equiv \text{Card da Tarefa}$$
-4. **`stage4_build_and_publish_pbi.py` (Paridade por Construção & Telemetria Atômica):** Monta o card técnico final injetando metadados da mesma estrutura em memória (paridade por construção) e registra logs com concorrência segura (`fcntl.flock` e `os.replace`).
+1. **`stage1_resolve_refinement_context.py` (SSOT Lock & Preflight):** Resolves authoritative coordinates from canonical dictionaries and freezes them into an immutable `context_locked.json` artifact before invoking any model.
+2. **`stage2_scaffold_dataform_and_review.py` (Deterministic Scaffolding):** Generates 100% via Python:
+   - External declarations: `definitions/01_sources/*.sqlx`
+   - Target model headers: `config {}` with unique keys, partitioning, clustering, and tags
+   - Quality unit assertions: `tests/assert_unique_*.sqlx`
+   - Mermaid lineage architecture flow
+   - A surgical prompt restricting the LLM strictly to translating the `SELECT` query body.
+3. **`stage3_validate_refinement_gate.py` (Fail-Closed Gate & 4x4 Parity):** Auto-restores any coordinates modified by the LLM, validates anti-patterns (such as hardcoded GCP projects in SQL), and audits **4x4 Parity**:
+   $$\text{SSOT Catalog} \equiv \text{Specification JSON} \equiv \text{Compiled SQLx Graph} \equiv \text{Agile Work Item}$$
+4. **`stage4_build_and_publish_pbi.py` (Parity by Construction & Atomic Telemetry):** Assembles the finalized technical specification (`PBI_<ID>_spec.md`) from the same in-memory canonical object (zero divergence by construction) and writes telemetry logs with file-locking concurrency (`fcntl.flock` and `os.replace`).
 
-#### Execução Rápida:
+#### Quick CLI Execution:
 ```bash
 python3 skills/migration-spec-refiner/scripts/refiner_pipeline.py \
   --ticket-id MIG-502 \
@@ -195,66 +197,66 @@ python3 skills/migration-spec-refiner/scripts/refiner_pipeline.py \
 
 ---
 
-## 📂 Estrutura Completa do Repositório
+## 📂 Repository Layout
 
 ```
 .
-├── README.md                                    # Documento executivo de arquitetura e impacto
+├── README.md                                    # Executive architecture and benchmark documentation
 └── skills/
     ├── cloud-preflight-infra-auditor/
-    │   ├── SKILL.md                             # Especificação do agente e runbooks
+    │   ├── SKILL.md                             # Agent specification and runbooks
     │   ├── scripts/
     │   │   ├── __init__.py
-    │   │   ├── audit_orchestrator.py            # CLI unificada dos 6 Pilares
-    │   │   ├── pillar1_projects_sa.py           # Projetos, SAs e Smoke Query
-    │   │   ├── pillar2_datasets_iam.py          # Datasets e IAM Cross-Project
-    │   │   ├── pillar3_secret_manager.py        # Secret Manager & Governança
-    │   │   ├── pillar4_object_storage.py        # Buckets GCS e Tiering
-    │   │   ├── pillar5_external_sources.py      # Drive/Sheets, Git & DML
-    │   │   ├── pillar6_network_connectivity.py  # Conectividade e Cloud NAT IP
-    │   │   └── reporters.py                     # Geração de Relatórios Executivos
+    │   │   ├── audit_orchestrator.py            # Unified 6-pillar preflight CLI
+    │   │   ├── pillar1_projects_sa.py           # Projects, SAs, and BigQuery smoke query
+    │   │   ├── pillar2_datasets_iam.py          # Datasets by tier & cross-project IAM ACLs
+    │   │   ├── pillar3_secret_manager.py        # Secret Manager governance by archetype
+    │   │   ├── pillar4_object_storage.py        # GCS buckets & Lakehouse tier separation
+    │   │   ├── pillar5_external_sources.py      # Google Drive probes, Git repos & DML tables
+    │   │   ├── pillar6_network_connectivity.py  # Network handshakes & Cloud NAT IP discovery
+    │   │   └── reporters.py                     # Standardized 3-tier executive reporting engine
     │   └── examples/
-    │       ├── sample_manifest.json             # Exemplo de manifesto corporativo
-    │       └── sample_report.md                 # Relatório de pré-voo gerado
+    │       ├── sample_manifest.json             # Corporate preflight input manifest
+    │       └── sample_report.md                 # Sample executive readiness report
     ├── data-lineage-upstream-validator/
-    │   ├── SKILL.md                             # Especificação de linhagem e fallbacks
+    │   ├── SKILL.md                             # Agent specification and wave fallback logic
     │   ├── scripts/
     │   │   ├── __init__.py
-    │   │   ├── validate_lineage.py              # CLI orquestradora de linhagem
-    │   │   ├── source_target_extractor.py       # Extrator de leitura/escrita
-    │   │   ├── dataform_contract_checker.py     # Verificação DW & Fallback Dataform
-    │   │   ├── resolve_legacy_lineage.py        # Motor de Resolução em 6 Camadas
-    │   │   └── backlog_task_auditor.py          # Auditoria de Grafo de Tarefas
+    │   │   ├── validate_lineage.py              # Lineage orchestrator CLI
+    │   │   ├── source_target_extractor.py       # Strict read vs. write lineage extractor
+    │   │   ├── dataform_contract_checker.py     # Live DW checks & Dataform wave fallback
+    │   │   ├── resolve_legacy_lineage.py        # 6-layer cascaded legacy lineage resolver
+    │   │   └── backlog_task_auditor.py          # Backlog dependency graph & anomaly auditor
     │   └── examples/
-    │       ├── legacy_pipeline_sample.py        # Código PySpark de referência
-    │       ├── sample_lineage_graph.json        # Configuração de validação
-    │       └── sample_backlog.json              # Grafo de backlog de tarefas
+    │       ├── legacy_pipeline_sample.py        # Reference PySpark pipeline
+    │       ├── sample_lineage_graph.json        # Lineage configuration example
+    │       └── sample_backlog.json              # Task dependency graph example
     └── migration-spec-refiner/
-        ├── SKILL.md                             # Especificação da arquitetura .py-First
+        ├── SKILL.md                             # .py-First architectural specification
         ├── scripts/
         │   ├── __init__.py
-        │   ├── refiner_pipeline.py              # Master pipeline das 4 etapas
+        │   ├── refiner_pipeline.py              # 4-stage master refinement pipeline
         │   ├── stage1_resolve_refinement_context.py
         │   ├── stage2_scaffold_dataform_and_review.py
         │   ├── stage3_validate_refinement_gate.py
         │   └── stage4_build_and_publish_pbi.py
         └── examples/
-            ├── canonical_catalog.json           # Dicionário canônico SSOT
-            ├── sample_legacy_spark_query.sql    # Query legada para migração
-            └── sample_target_spec.json          # Exemplo de saída compilada
+            ├── canonical_catalog.json           # Canonical SSOT dictionary
+            ├── sample_legacy_spark_query.sql    # Legacy Spark SQL query
+            └── sample_target_spec.json          # Compiled target model reference
 ```
 
 ---
 
-## 🔒 Compliance & Sanitização de Dados
+## 🔒 Compliance & Sanitization
 
-Todo o repositório é rigorosamente sanitizado:
-- **Domínio Fictício Canônico:** Utiliza convenções genéricas como `acme-data-platform`, `acme-dwh-prod`, `acme-lakehouse-raw` e `enterprise-dpl`.
-- **Zero Segredos e Credenciais:** Não contém tokens, chaves de serviço ou referências a clientes ou consultorias reais.
-- **Portabilidade Total:** Pode ser executado localmente em modo `--dry-run` ou conectado a ambientes GCP reais através do Application Default Credentials (`gcloud auth application-default login`).
+All code, schemas, and configurations strictly adhere to corporate sanitization guidelines:
+- **Canonical Generic Domain:** Uses synthetic conventions such as `acme-data-platform`, `acme-dwh-prod`, and `acme-lakehouse-raw`.
+- **Zero Secrets or Credentials:** Contains no real tokens, service account keys, passwords, or customer references.
+- **Portability:** Runs out-of-the-box locally with `--dry-run` or against live GCP environments via standard Application Default Credentials (`gcloud auth application-default login`).
 
 ---
 
-## 👨‍💻 Perfil do Autor
+## 👨‍💻 Author Profile
 
-Projetado por um **Staff Data Platform & AI Engineer** focado em confiabilidade de sistemas de dados em larga escala, governança em código (*Governance-as-Code*) e engenharia de agentes autônomos para plataformas analíticas modernas.
+Engineered by a **Staff Data Platform & AI Engineer** specializing in large-scale data system reliability, Governance-as-Code, and autonomous AI agents for modern analytics engineering.

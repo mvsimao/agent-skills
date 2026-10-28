@@ -13,38 +13,38 @@ A production-grade technical refinement skill that replaces fragile, prompt-only
 ```mermaid
 flowchart TD
     subgraph Stage1["Stage 1: SSOT Lock & Preflight"]
-        CAT[SSOT Canonical Catalog] --> LK[stage1_resolve_refinement_context.py]
-        LK --> CTX[(context_locked.json)]
-        CTX --> INFRA[Pillar 1-6 Cloud Preflight]
-        CTX --> LIN[4-Layer Upstream Validator]
+        CAT["SSOT Canonical Catalog"] --> LK["stage1_resolve_refinement_context.py"]
+        LK --> CTX[("context_locked.json")]
+        CTX --> INFRA["Pillar 1-6 Cloud Preflight"]
+        CTX --> LIN["4-Layer Upstream Validator"]
     end
 
     subgraph Stage2["Stage 2: Deterministic Scaffolding"]
-        CTX --> SCF[stage2_scaffold_dataform_and_review.py]
-        SCF --> SRC[definitions/01_sources/*.sqlx]
-        SCF --> CFG[Target model config {}]
-        SCF --> TST[tests/*.sqlx Assertions]
-        SCF --> MER[Mermaid Lineage Flow]
-        SCF --> PRM[Surgical Prompt for LLM]
+        CTX --> SCF["stage2_scaffold_dataform_and_review.py"]
+        SCF --> SRC["definitions/01_sources/*.sqlx"]
+        SCF --> CFG["Target Model SQLx Config Block"]
+        SCF --> TST["tests/*.sqlx Assertions"]
+        SCF --> MER["Mermaid Lineage Flow"]
+        SCF --> PRM["Surgical Prompt for LLM"]
     end
 
     subgraph LLM_Scope["Surgical LLM Execution Scope"]
-        PRM --> LLM[LLM: SELECT & Logic Translation ONLY]
+        PRM --> LLM["LLM: SELECT & Logic Translation ONLY"]
     end
 
     subgraph Stage3["Stage 3: Fail-Closed Gate & 4x4 Parity"]
-        LLM --> GT[stage3_validate_refinement_gate.py]
-        GT --> RESTORE[Auto-Restore Tampered Coordinates]
-        GT --> RULES[Check SQL Anti-Patterns & Phantom Refs]
-        GT --> P4X4{4x4 Parity Audit}
-        P4X4 -->|Catalog vs JSON vs SQLx vs Card| PASS_GATE[Clearance]
-        P4X4 -->|Mismatch| BLOCK_GATE[Fail-Closed Halting]
+        LLM --> GT["stage3_validate_refinement_gate.py"]
+        GT --> RESTORE["Auto-Restore Tampered Coordinates"]
+        GT --> RULES["Check SQL Anti-Patterns & Phantom Refs"]
+        GT --> P4X4{"4x4 Parity Audit"}
+        P4X4 -->|Catalog vs JSON vs SQLx vs Card| PASS_GATE["Clearance: Approved"]
+        P4X4 -->|Mismatch Detected| BLOCK_GATE["Fail-Closed: Halts Pipeline"]
     end
 
     subgraph Stage4["Stage 4: Parity by Construction & Publish"]
-        PASS_GATE --> PUB[stage4_build_and_publish_pbi.py]
-        PUB --> PBI[PBI_MIG-XXX_spec.md]
-        PUB --> TLM[(telemetry_run.jsonl with flock)]
+        PASS_GATE --> PUB["stage4_build_and_publish_pbi.py"]
+        PUB --> PBI["PBI_MIG-XXX_spec.md"]
+        PUB --> TLM[("telemetry_run.jsonl with flock")]
     end
 ```
 
