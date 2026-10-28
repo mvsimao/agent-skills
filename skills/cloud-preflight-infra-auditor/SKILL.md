@@ -15,20 +15,20 @@ This skill performs a rigorous, 6-pillar inspection **before** technical refinem
 
 ```mermaid
 flowchart TD
-    A[Legacy Spark / SQL / DAGs] --> B[Manifest Extractor / Preflight Auditor]
-    B --> P1[Pillar 1: Projects, SAs & Smoke Query]
-    B --> P2[Pillar 2: Datasets & Cross-Project IAM ACLs]
-    B --> P3[Pillar 3: Secret Manager & Archetype Governance]
-    B --> P4[Pillar 4: GCS Storage & Lakehouse Tiering]
-    B --> P5[Pillar 5: External Tables & Git Repos]
-    B --> P6[Pillar 6: VPC Egress & Cloud NAT]
+    A["Legacy Spark / SQL / DAGs"] --> B["Manifest Extractor / Preflight Auditor"]
+    B --> P1["Pillar 1: Projects, SAs & Smoke Query"]
+    B --> P2["Pillar 2: Datasets & Cross-Project IAM ACLs"]
+    B --> P3["Pillar 3: Secret Manager & Archetype Governance"]
+    B --> P4["Pillar 4: GCS Storage & Lakehouse Tiering"]
+    B --> P5["Pillar 5: External Tables & Git Repos"]
+    B --> P6["Pillar 6: VPC Egress & Cloud NAT"]
 
-    P1 & P2 & P3 & P4 & P5 & P6 --> M{Deterministic Matrix}
-    M -->|404 Not Found| BLOCK[🔴 MISSING_INFRA: Hard Blocker + Terraform Remediation]
-    M -->|403 Forbidden| RESTRICT[🟡 EXISTS_RESTRICTED_RUNNER: Non-blocking Warning]
-    M -->|200 OK / PASS| PASS[🟢 READY: Automated Clearance]
+    P1 & P2 & P3 & P4 & P5 & P6 --> M{"Deterministic Matrix"}
+    M -->|404 Not Found| BLOCK["🔴 MISSING_INFRA: Hard Blocker + Terraform Remediation"]
+    M -->|403 Forbidden| RESTRICT["🟡 EXISTS_RESTRICTED_RUNNER: Non-blocking Warning"]
+    M -->|200 OK / PASS| PASS["🟢 READY: Automated Clearance"]
 
-    BLOCK & RESTRICT & PASS --> R[3-Tier Executive Preflight Report]
+    BLOCK & RESTRICT & PASS --> R["3-Tier Executive Preflight Report"]
 ```
 
 ---
