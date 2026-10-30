@@ -349,7 +349,7 @@ python3 tools/dataform_cross_project_guard.py \
 ### 3. `tools/board_workflow_governor.py`
 *Kanban workflow governor, tag manager, link automator & SRE request synthesizer.*
 
-- **Safe Column Movement:** Transitions cards between columns (e.g. *Validation Backfill*) avoiding redundant `State` changes that cause board rule errors.
+- **Safe Column Movement:** Transitions cards between columns (e.g. *Validation*) avoiding redundant `State` changes that cause board rule errors.
 - **Atomic Tagging:** Manages tags (`ready-refinement`, `Refined`, `Pre-Flight`, `dev-ready`, `Infra-Blocked`).
 - **Batch Dependency Linker:** Creates bidirectional `Predecessor` / `Successor` links in batch.
 - **In-Place Comment Updating:** Updates preflight/lineage diagnostic comments via `PATCH`.
@@ -358,7 +358,7 @@ python3 tools/dataform_cross_project_guard.py \
 
 ```bash
 # Move Card Safely
-python3 tools/board_workflow_governor.py --move CARD-101 "Validation Backfill" --dry-run
+python3 tools/board_workflow_governor.py --move CARD-101 "Validation" --dry-run
 
 # Generate Batch Communication Summary
 python3 tools/board_workflow_governor.py --batch-summary --cleared CARD-101 CARD-102 --blocked CARD-103
