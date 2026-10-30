@@ -228,7 +228,7 @@ python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
 
 - **Structured Extraction, Ghost Views Resolution & Non-AS-IS Filtering:**
   - Strictly isolates read sources from write targets, supporting multi-target pipelines and external ingestion (0 DW sources).
-  - **Ghost Views Resolution:** Automatically maps legacy views to canonical physical streaming/batch tables (e.g. `vw_eventtracks` ➔ `silver_platform.eventtracks`), preventing false blockers or phantom targets.
+  - **Ghost Views Resolution:** Automatically maps legacy views to canonical physical streaming/batch tables (e.g. `vw_events` ➔ `silver.events`), preventing false blockers or phantom targets.
   - Recognizes architectural consolidations (*Non-AS-IS*), filtering retired intermediate tables.
 - **Multi-Layer Verification with 0-Rows Lock:**
   - **Layer 1 (Live BigQuery DW + SA Impersonation + 0-Rows Lock):** Validates table existence and `num_rows`. **Critical Lock:** If a table exists with `0 rows` and the producer card is still unstarted (`Pre-Wave` / `Refining`), it is flagged as an `UNPOPULATED_UPSTREAM` dependency blocker.
@@ -481,7 +481,7 @@ python3 tools/autonomous_refinement_worker.py --dry-run --once
 ## 🔒 Agnostic & Compliance Guarantee
 
 - **100% Agnostic:** Contains zero proprietary credentials, personal data (PII), or private enterprise mentions.
-- **Architectural Standards:** Uses canonical data warehouse models (`silver_platform.eventtracks`), standard GCP IAM roles (`roles/bigquery.dataViewer`), and generic project alias patterns (`p-*`, `i-*`, `a-*`).
+- **Architectural Standards:** Uses canonical data warehouse models (`silver.events`), standard GCP IAM roles (`roles/bigquery.dataViewer`), and generic project alias patterns (`p-*`, `i-*`, `a-*`).
 - **Fail-Closed Governance:** Automatically halts execution upon detecting missing infrastructure or unpopulated dependencies, eliminating phantom development.
 
 ---
