@@ -38,10 +38,11 @@ flowchart TD
 
 ## 🏛️ The 4 Verification Layers
 
-### Layer 1: Data Warehouse Live + SA Impersonation + Document Alignment
+### Layer 1: Data Warehouse Live + SA Impersonation + 0-Rows Predecessor Lock
 - Queries BigQuery metadata for physical existence, `num_rows`, and partition update timestamps.
 - **Service Account Impersonation Fallback:** If local credentials receive `403 Forbidden`, automatically cascades to the regional worker SA to verify actual table existence.
-- Compares work item specifications against declared `01_sources/*.sqlx` contracts.
+- **Empty Table Predecessor Lock (`UNPOPULATED_UPSTREAM`):** If a physical table exists in BigQuery but contains `0 rows` (schema shell only) and the producer card is still unstarted (`Pre-Wave` / `Refining`), it is classified as a dependency blocker rather than a false-positive clearance.
+- **Ghost Views Resolution & Non-AS-IS Consolidation:** Automatically maps legacy logical views to canonical physical streaming/batch tables (e.g. `silver_platform.eventtracks`), preventing false blockers or phantom targets, and recognizes merged/retired intermediate tables.
 
 ### Layer 2: Dataform Repository Fallback + Sibling Projects + Draft Guardrail
 - **Wave-Based Modernization:** If the table is not yet materialized in BigQuery production, but its `.sqlx` declaration or table model is merged in the default branch, the skill clears the pipeline (`DATAFORM_VALIDATED`).
@@ -54,15 +55,20 @@ When an upstream table is physically missing in BigQuery, this engine automatica
 2. **Sovereign Job Graph & Architectural Overrides:** Traverses dependency graphs (Airflow, Oozie, Control-M, Autosys) and applies sovereign architecture overrides for consolidated models.
 3. **Parameterized Ingestion Templates:** Scans generic database-to-lake ingestion configs (CDC/Sqoop/JDBC patterns).
 4. **Target Catalog Match with Recurring Writer Scoring:** Evaluates table name stems and execution frequency scores to rank likely writers.
-5. **Static Code Metadata:** Parses YAML/JSON pipeline definitions and metadata manifests.
+5. **Static Code Metadata:** Parses YAML/JSON pipeline definitions and metadata manifests (supporting list or dict structures and normalizing slashes/special characters in paths).
 6. **AST & Regex Write Command Scanner:** Parses source code for physical write operations (`.saveAsTable`, `.insertInto`, `INSERT INTO`, `MERGE INTO`, `CREATE TABLE`).
 
-### Layer 4: Agile Backlog Auditor & The 4 Governance Anomaly Classes
+### Layer 4: Agile Backlog Auditor & The 3-Color Traffic Light Governance
 Cross-references discovered legacy producer jobs against Jira/Azure DevOps backlogs and automatically detects **4 classes of governance anomalies**:
 1. **`INVERTED_LINK`:** When a predecessor task is erroneously registered as a successor in the agile board (circular/inverted dependency).
 2. **`UNLINKED_PREDECESSOR`:** When a real code dependency exists in the backlog but is unlinked on the board.
 3. **`PREDECESSOR_WITHOUT_PBI`:** When an upstream table is produced by a legacy routine that does not yet have a card in the backlog.
 4. **`OMITTED_SOURCES`:** When sources physically read in legacy code were omitted in the ticket's documentation table.
+
+**Standardized 3-Color Traffic Light Header:**
+- `🟢 VERDE (READY)`: 100% of upstream sources exist and are populated, with zero link anomalies or missing dependencies.
+- `🟡 AMARELO (TASK DEPENDENCY)`: Blocked waiting for completion of an identified, mapped predecessor card.
+- `🔴 VERMELHO (BLOCKED / GOVERNANCE GAP)`: Orphan source without producer card, unpopulated 0-row upstream table, or backlog link anomalies.
 
 ---
 

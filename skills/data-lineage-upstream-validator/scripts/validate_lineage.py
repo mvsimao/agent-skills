@@ -109,18 +109,32 @@ def run_lineage_validation(
         documented_sources=documented_sources if documented_sources else None
     )
 
-    # Determine Gate Approval
-    is_ready = True
-    for s in statuses:
-        if s.status in ["MISSING_UNRESOLVED", "UNSTARTED_PREDECESSOR"]:
-            is_ready = False
-            break
+    # Determine Gate Approval and 3-Color Traffic Light Classification
+    has_unstarted_task_dep = any(s.status == "UNSTARTED_PREDECESSOR" for s in statuses)
+    has_unpopulated = any(s.status == "UNPOPULATED_UPSTREAM" for s in statuses)
+    has_missing_unresolved = any(s.status == "MISSING_UNRESOLVED" for s in statuses)
+    has_link_anomalies = any(len(br.link_anomalies) > 0 for br in backlog_recs)
+    has_unlinked_predecessors = any(br.predecessor_ticket_id is None and br.required_table for br in backlog_recs)
+
+    if not has_unstarted_task_dep and not has_unpopulated and not has_missing_unresolved and not has_link_anomalies and not has_unlinked_predecessors:
+        traffic_light = "🟢 VERDE (READY)"
+        gate_verdict = "APPROVED (100% of sources exist/populated & zero link issues)"
+        is_ready = True
+    elif has_unstarted_task_dep and not has_missing_unresolved and not has_link_anomalies:
+        traffic_light = "🟡 AMARELO (TASK DEPENDENCY)"
+        gate_verdict = "WAITING FOR PREDECESSOR TASK (Upstream card mapped but not yet completed)"
+        is_ready = False
+    else:
+        traffic_light = "🔴 VERMELHO (BLOCKED / GOVERNANCE GAP)"
+        gate_verdict = "HARD BLOCKER (Orphan source without producer, unpopulated table, or link anomaly)"
+        is_ready = False
 
     # Format Markdown Report
     md = []
     md.append(f"# 🔍 Upstream Data Lineage & Dependency Pre-Flight Report")
     md.append(f"**Migration Ticket ID:** `{ticket_id}`  ")
     md.append(f"**Pipeline Archetype:** `{extracted.pipeline_type}`  ")
+    md.append(f"**Executive Traffic Light:** **{traffic_light}** — `{gate_verdict}`  ")
     md.append(f"**Final Lineage Clearance:** **{'🟢 APPROVED FOR DEVELOPMENT' if is_ready else '🔴 BLOCKED BY UPSTREAM DEPENDENCY'}**  \n")
 
     md.append("## 1. 📊 Lineage Extraction Boundaries")

@@ -44,11 +44,11 @@ flowchart TD
 - **Live Smoke Query:** Executes a live query probe (`SELECT 1 AS readiness_check`) on BigQuery to guarantee APIs are enabled, billing accounts are linked, and compute quotas (`bigquery.jobs.create`) are healthy.
 
 ### Pillar 2: BigQuery Datasets & Cross-Project IAM ACL Audit
-- **Tier Verification:** Verifies physical existence of dataset boundaries (`bronze_*`, `silver_*`, `gold_*`, `staging_*`).
+- **Tier Verification & Fast-Landing Governance:** Verifies physical existence of dataset boundaries (`bronze_*`, `silver_*`, `gold_*`, `staging_*`), recognizing pre- and post-modernization IaC conventions (e.g. Cloud Foundation Fabric / FAST).
 - **Regex False-Positive Filtering:** Automatically discards non-dataset tokens caught by naive regexes (such as `.iam.gserviceaccount.com` suffixes or egress destinations like `NA`, `EMAIL`, `SFTP`).
 - **Cross-Project Dependency Check:** Inspects cross-project dependencies (`source_project != target_project`) even before `.sqlx` code is authored.
-- **IAM Policy Verification:** Validates that the consumer Service Account holds `roles/bigquery.dataViewer` (directly or via an authorized Google Group).
-- **Auto-Remediation:** Emits copyable Terraform resources (`google_bigquery_dataset_iam_member`) and `bq add-iam-policy-binding` CLI commands.
+- **IAM Policy Verification:** Validates that the consumer Service Account holds `roles/bigquery.dataViewer` (including verification of shared AI/LLM Gateway datasets when applicable).
+- **Auto-Remediation:** Emits copyable Terraform resources (`google_bigquery_dataset_iam_member`) and `bq add-iam-policy-binding` CLI commands + grouped summary list ready for SRE/IaC teams.
 
 ### Pillar 3: Secret Manager & Archetype Governance
 - **Archetype Governance:** Pure SQL transformation pipelines (Dataform / BigQuery ELT) execute inside the BigQuery engine without vault credentials in runtime. Secret references are non-blocking warnings.
@@ -79,6 +79,7 @@ A critical failure mode in automated modernization pipelines is failing runs due
    - **`404 Not Found` (`🔴 MISSING_INFRA`):** Hard blocker. The resource physically does not exist in the cloud. Halts refinement and outputs copyable Terraform IaC.
    - **`403 Forbidden` without local permission (`🟡 EXISTS_RESTRICTED_RUNNER`):** Non-blocking warning. The resource exists in the cloud project directory, but the local operator has restricted visibility. Refinement proceeds with an audit note.
    - **`200 OK / Enabled` (`🟢 PASS`):** Verified healthy and available in target cloud environment.
+3. **In-Place (`PATCH`) Comment Deduplication:** Updates existing diagnostic comments on the card via `PATCH` (deduplicating previous reports) rather than creating cluttered multiple comments.
 
 ---
 

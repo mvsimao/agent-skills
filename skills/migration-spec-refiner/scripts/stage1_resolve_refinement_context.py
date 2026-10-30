@@ -26,7 +26,16 @@ logger = logging.getLogger("refiner.stage1-ssot-lock")
 class ContextLockResolver:
     """Locks authoritative coordinates from origin/main SSOT and triggers preflight checks."""
 
-    EGRESS_NON_TABLE_TARGETS = {"email", "sftp", "webhook", "api", "kafka", "null", "none", "na"}
+    EGRESS_NON_TABLE_TARGETS = {
+        "email", "sftp", "webhook", "api", "kafka", "null", "none", "na",
+        "data_application_api", "application_api", "rest_api"
+    }
+
+    GHOST_VIEWS_MAP = {
+        "vw_eventtracks": "silver_platform.eventtracks",
+        "legacy_eventtracks": "silver_platform.eventtracks",
+        "eventtracks_view": "silver_platform.eventtracks"
+    }
 
     PROJECT_ALIAS_MAP = {
         "prod": "acme-dwh-prod",
@@ -39,8 +48,9 @@ class ContextLockResolver:
     }
 
     def load_latest_ssot_json(self, catalog_path: str, repo_root: Optional[str] = None) -> Dict[str, Any]:
-        """Loads canonical catalog from origin/main to prevent local dictionary drift."""
-        cat_file = Path(catalog_path)
+        """Loads canonical catalog from origin/main to prevent local dictionary drift, normalizing path variations."""
+        norm_catalog_path = catalog_path.strip().replace("#", "_").rstrip("/\\")
+        cat_file = Path(norm_catalog_path)
         
         # If inside a git repo, try to read directly from origin/main
         if repo_root:
@@ -58,7 +68,11 @@ class ContextLockResolver:
                 logger.warning(f"Could not read from origin/main directly, falling back to local file: {e}")
 
         if not cat_file.exists():
-            raise FileNotFoundError(f"Canonical catalog not found: {cat_file}")
+            # Try original path if normalized didn't exist directly
+            if Path(catalog_path).exists():
+                cat_file = Path(catalog_path)
+            else:
+                raise FileNotFoundError(f"Canonical catalog not found: {cat_file}")
 
         with open(cat_file, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -67,15 +81,47 @@ class ContextLockResolver:
         clean = raw_proj.strip().lower()
         return self.PROJECT_ALIAS_MAP.get(clean, raw_proj.strip())
 
-    def filter_egress_targets(self, targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Filters out non-table egress endpoints (Rule D-32)."""
+    def filter_egress_targets(self, targets: Any) -> List[Dict[str, Any]]:
+        """Filters out discarded targets (discarded_by) and non-table egress endpoints (Rule D-32)."""
         valid_targets = []
-        for t in targets:
-            tbl_name = t.get("table_id", "").lower()
-            ds_name = t.get("dataset_id", "").lower()
-            if tbl_name in self.EGRESS_NON_TABLE_TARGETS or ds_name in self.EGRESS_NON_TABLE_TARGETS:
+        target_list: List[Dict[str, Any]] = []
+
+        # Support targets passed as list or dict
+        if isinstance(targets, list):
+            target_list = targets
+        elif isinstance(targets, dict):
+            for k, v in targets.items():
+                if isinstance(v, dict):
+                    v_copy = dict(v)
+                    v_copy.setdefault("table_id", k)
+                    target_list.append(v_copy)
+                elif isinstance(v, str):
+                    target_list.append({"table_id": k, "dataset_id": v})
+
+        for t in target_list:
+            # Filter discarded targets
+            if t.get("discarded_by"):
+                logger.info(f"Target '{t.get('table_id')}' discarded by: {t.get('discarded_by')}. Skipping.")
+                continue
+
+            tbl_name = t.get("table_id", "").lower().strip()
+            ds_name = t.get("dataset_id", "").lower().strip()
+            dest_type = t.get("destination_type", "").lower().strip()
+
+            if (tbl_name in self.EGRESS_NON_TABLE_TARGETS or
+                ds_name in self.EGRESS_NON_TABLE_TARGETS or
+                dest_type in self.EGRESS_NON_TABLE_TARGETS or
+                tbl_name == "a_definir_refinamento"):
                 logger.info(f"Rule D-32: Discarded non-table egress target '{ds_name}.{tbl_name}'.")
                 continue
+
+            # Ghost view resolution on targets
+            if tbl_name in self.GHOST_VIEWS_MAP:
+                resolved = self.GHOST_VIEWS_MAP[tbl_name]
+                parts = resolved.split(".")
+                t["dataset_id"] = parts[0]
+                t["table_id"] = parts[1]
+
             valid_targets.append(t)
         return valid_targets
 

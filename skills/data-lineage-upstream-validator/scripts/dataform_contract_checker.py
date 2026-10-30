@@ -52,14 +52,19 @@ class DataformContractChecker:
         dataform_repo_path: Optional[str] = None,
         sibling_repo_paths: Optional[List[str]] = None,
         is_draft_workspace: bool = False,
+        producer_card_status: Optional[str] = None,
         impersonate_sa: Optional[str] = None
     ) -> UpstreamValidationStatus:
         full_id = f"{project_id}.{dataset_id}.{table_id}"
 
         # -------------------------------------------------------------
-        # CAMADA 1: Live BigQuery Check with SA Impersonation Fallback
+        # CAMADA 1: Live BigQuery Check with SA Impersonation Fallback & 0-Rows Lock
         # -------------------------------------------------------------
-        live_res = self._check_live_dw(project_id, dataset_id, table_id, impersonate_sa=impersonate_sa)
+        live_res = self._check_live_dw(
+            project_id, dataset_id, table_id,
+            producer_card_status=producer_card_status,
+            impersonate_sa=impersonate_sa
+        )
         if live_res is not None:
             return live_res
 
@@ -67,7 +72,11 @@ class DataformContractChecker:
         if not impersonate_sa:
             fallback_sa = f"sa-dataform-executor@{project_id}.iam.gserviceaccount.com"
             logger.info(f"Checking live DW for '{full_id}' using SA impersonation cascade '{fallback_sa}'...")
-            impersonated_res = self._check_live_dw(project_id, dataset_id, table_id, impersonate_sa=fallback_sa)
+            impersonated_res = self._check_live_dw(
+                project_id, dataset_id, table_id,
+                producer_card_status=producer_card_status,
+                impersonate_sa=fallback_sa
+            )
             if impersonated_res is not None:
                 impersonated_res.impersonation_used = True
                 impersonated_res.details += " (Confirmed via Service Account Impersonation cascade)."
@@ -108,11 +117,28 @@ class DataformContractChecker:
         project: str,
         dataset: str,
         table: str,
+        producer_card_status: Optional[str] = None,
         impersonate_sa: Optional[str] = None
     ) -> Optional[UpstreamValidationStatus]:
         full_table = f"{project}:{dataset}.{table}"
+        unstarted_statuses = {"pre-wave", "refining", "to do", "new", "draft", "backlog"}
+
         if self.dry_run:
-            if "erp_customers" in table or "orders_cleansed" in table or "raw_customers" in table or "orders_v2" in table:
+            if "unpopulated_table" in table or "orders_empty" in table:
+                num_rows = 0
+                is_unstarted = (producer_card_status or "refining").lower() in unstarted_statuses
+                if is_unstarted:
+                    return UpstreamValidationStatus(
+                        project_id=project,
+                        dataset_id=dataset,
+                        table_id=table,
+                        status="UNPOPULATED_UPSTREAM",
+                        layer_found="DWH_LIVE",
+                        num_rows=0,
+                        last_modified="2026-10-28T10:00:00Z",
+                        details=f"CRITICAL LOCK: Table `{full_table}` exists physically but contains 0 rows, and producer card is unstarted ('{producer_card_status or 'Refining'}'). Classified as dependency blocker."
+                    )
+            if "erp_customers" in table or "orders_cleansed" in table or "raw_customers" in table or "orders_v2" in table or "eventtracks" in table:
                 return UpstreamValidationStatus(
                     project_id=project,
                     dataset_id=dataset,
@@ -136,6 +162,22 @@ class DataformContractChecker:
                 data = json.loads(res.stdout)
                 num_rows = int(data.get("numRows", 0))
                 last_mod = data.get("lastModifiedTime")
+
+                # 0-Rows Lock Rule
+                is_unstarted = (producer_card_status or "").lower() in unstarted_statuses
+                if num_rows == 0 and is_unstarted:
+                    return UpstreamValidationStatus(
+                        project_id=project,
+                        dataset_id=dataset,
+                        table_id=table,
+                        status="UNPOPULATED_UPSTREAM",
+                        layer_found="DWH_LIVE",
+                        num_rows=0,
+                        last_modified=last_mod,
+                        impersonation_used=bool(impersonate_sa),
+                        details=f"CRITICAL LOCK: Physical table `{full_table}` has 0 rows and producer card is unstarted ('{producer_card_status}'). Dependency blocker UNPOPULATED_UPSTREAM."
+                    )
+
                 return UpstreamValidationStatus(
                     project_id=project,
                     dataset_id=dataset,

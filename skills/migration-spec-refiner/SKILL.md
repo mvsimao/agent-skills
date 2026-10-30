@@ -12,81 +12,83 @@ A production-grade technical refinement skill that replaces fragile, prompt-only
 
 ```mermaid
 flowchart TD
+    subgraph Queue["Chained Batch Queue Engine (refine_card_orchestrator.py)"]
+        ENQ["--enqueue <ids...> (100+ cards)"] --> PERSIST[("refinement_batch_queue.json")]
+        PERSIST --> WIN["Chained Sub-Batches (max 4 active cards)"]
+    end
+
     subgraph Stage1["Stage 1: Live origin/main SSOT Lock & Preflight"]
-        FETCH["git fetch origin main"] --> SSOT["load_latest_ssot_json()"]
-        SSOT --> D32["Rule D-32: Filter Egress Endpoints"]
-        D32 --> CTX[("context_locked.json")]
-        CTX --> INFRA["Pillar 1-6 Cloud Preflight (with Impersonation)"]
-        CTX --> LIN["4-Layer Upstream Validator (4 Governance Anomalies)"]
+        WIN --> FETCH["git fetch origin main"]
+        FETCH --> SSOT["load_latest_ssot_json()"]
+        SSOT --> D32["Rule D-32: Filter Egress Endpoints (EMAIL/SFTP)"]
+        D32 --> CTX[("context_locked.json (Immutable Contract)")]
     end
 
-    subgraph Stage2["Stage 2: Deterministic Scaffolding & T2.9 Auto-Healing"]
-        CTX --> SCF["stage2_scaffold_dataform_and_review.py"]
-        SCF --> SRC["definitions/01_sources/*.sqlx"]
-        SCF --> CFG["Target Model SQLx Config Block (TIMESTAMP_TRUNC)"]
-        SCF --> TST["tests/*.sqlx Assertions"]
-        SCF --> T29["Rule T2.9: Auto-Heal Section 3.2 Datasets"]
-        SCF --> PRM["Lean Surgical Prompt (~5 KB)"]
+    subgraph Stage2["Stage 2: Deterministic 5-Artifact Scaffolding & T2.9 Auto-Healing"]
+        CTX --> SCF["scaffold_dataform_and_review.py"]
+        SCF --> A1["1. definitions/01_sources/*.sqlx (utils.projectId)"]
+        SCF --> A2["2. definitions/03_silver/<table>.sqlx (${ref(2-arg)})"]
+        SCF --> A3["3. definitions/05_assertions/assert_<table>.sqlx (dependencies)"]
+        SCF --> A4["4. definitions/06_legacy_contracts/vw_<table>.sqlx"]
+        SCF --> A5["5. dags/<region>/<dag_id>.yaml (Airflow DAG Factory)"]
+        SCF --> DETECT{"Anti-Placeholder Detector: SELECT *, 1=1, TODO?"}
     end
 
-    subgraph LLM_Scope["Surgical LLM Execution Scope"]
-        PRM --> LLM["LLM: SELECT & Logic Translation ONLY"]
+    subgraph LLM_Scope["Surgical LLM Execution Scope (<= 4 Cards at a time)"]
+        DETECT -->|NEEDS_SURGICAL_LLM| PRM["Lean Surgical Prompt (~5 KB)"]
+        PRM --> LLM["LLM: SELECT Body & Business Logic ONLY"]
     end
 
-    subgraph Stage3["Stage 3: Fail-Closed Gate (37 Rules) & 4x4 Parity"]
-        LLM --> GT["stage3_validate_refinement_gate.py"]
-        GT --> RESTORE["Auto-Restore Tampered Coordinates"]
-        GT --> R37["Validate 37 Architectural Rules"]
-        GT --> P4X4{"4x4 Parity Audit"}
-        P4X4 -->|Catalog vs JSON vs SQLx vs Card| PASS_GATE["Clearance: Approved"]
-        P4X4 -->|Mismatch Detected| BLOCK_GATE["Fail-Closed: Halts Pipeline"]
+    subgraph Stage3["Stage 3: Fail-Closed Gate & Local Validators Suite"]
+        LLM --> GT["validate_refinement_gate.py"]
+        GT --> VAL1["scripts/validators/test_architect_consistency.py (37 Rules)"]
+        GT --> VAL2["scripts/validators/test_pbi_consistency.py (Suites S1–S6)"]
+        GT --> VAL3["scripts/validators/contract_test.py (4x4 Parity & Disk Check)"]
     end
 
-    subgraph Stage4["Stage 4: Parity by Construction (Suites S1-S6) & Publish"]
-        PASS_GATE --> PUB["stage4_build_and_publish_pbi.py"]
-        PUB --> S1S6["Verify Consistency Suites S1 to S6"]
-        S1S6 --> PBI["PBI_MIG-XXX_spec.md"]
-        PUB --> TLM[("telemetry_run.jsonl with flock")]
+    subgraph Stage4["Stage 4: Parity by Construction & Bidirectional Linker"]
+        VAL1 & VAL2 & VAL3 --> PUB["build_and_publish_pbi.py"]
+        PUB --> ADO["Bidirectional Linker: Predecessor/Successor + Tag 'Refined'"]
+        PUB --> TLM[("telemetry_run.jsonl with flock & os.replace")]
+        TLM --> ADVANCE["Advance to Next 4 Cards in Queue"]
     end
 ```
 
 ---
 
-## 🏛️ The 4 Deterministic Stages
+## 🏛️ The 4 Deterministic Stages & Chained Queue Control
 
-### Stage 1: Live `origin/main` SSOT Lock & Pre-Flight (`stage1_resolve_refinement_context.py`)
-- **Live SSOT Fetch:** Executes `git fetch origin main` and reads the canonical catalog directly from `origin/main` (`load_latest_ssot_json`) to eliminate local dictionary drift.
-- **Alias Normalization:** Normalizes project and dataset aliases (resolving short_names into canonical active GCP projects).
-- **Rule D-32 Egress Filtering:** Automatically discards non-table egress destinations (`EMAIL`, `SFTP`, `WEBHOOK`) from target data model representations.
-- **Multi-Target & Multi-Region:** Preserves multiple target outputs and parameterizes region strings (`sam, nam, eur` -> `${constants.REGION}`).
-- **Immutable Lock:** Generates `context_locked.json` before any model is called and executes preflights.
+### Queue Control: Chained Micro-Batches (`refine_card_orchestrator.py`)
+- **Queue Flags:** Supports `--enqueue <ids...>`, `--resume-queue`, and `--max-active 4` (default).
+- **Scale-Safe State Persistence:** Accepts 100+ cards at once, persisting state in `refinement_batch_queue.json` and processing them in chained windows of **at most 4 cards simultaneously**.
+- **Control Pause on `NEEDS_SURGICAL_LLM`:** Whenever a sub-batch requires SQL translation, the orchestrator pauses with instructions for the LLM to translate only the `.sqlx` of those <=4 cards, validates the fail-closed gate, and automatically rolls into the next 4 cards.
 
-### Stage 2: Deterministic Scaffolding, T2.9 Auto-Healing & Surgical Prompt (`stage2_scaffold_dataform_and_review.py`)
-- **100% Python Scaffolding:**
-  * External source declarations: `definitions/01_sources/*.sqlx`
-  * Target model headers: `config {}` supporting complex partition expressions like `TIMESTAMP_TRUNC(timestamp_col, DAY)`
-  * Unit assertions: `tests/assert_unique_*.sqlx`
-  * Mermaid dataflow diagrams
-- **Rule T2.9 Auto-Healing:** When an existing specification matches SSOT coordinates, preserves validated business rules and deterministically auto-heals the Required Datasets table (Section `3.2`), guaranteeing 100% of Source and Target datasets are enumerated without omissions.
-- **Lean Surgical Prompt (~5 KB):** Restricts the LLM exclusively to translating the `SELECT` query body and drafting an executive summary.
+### Stage 1: Live `origin/main` SSOT Lock & Pre-Flight (`resolve_refinement_context.py`)
+- **Live SSOT Fetch:** Executes `git fetch origin main` and reads the canonical catalog directly from `origin/main` (`load_latest_ssot_json`), normalizing paths with slashes, spaces, `#`, and supporting both dict and list structures.
+- **Rule D-32 Egress & Discard Filtering:** Discards `discarded_by` targets and non-table egress destinations (`EMAIL`, `SFTP`, `WEBHOOK`, `DATA_APPLICATION_API`), preventing accidental `A_DEFINIR_REFINAMENTO` placeholders.
+- **Ghost Views Resolution:** Resolves legacy logical views into canonical physical tables.
+- **Immutable Lock:** Generates `context_locked.json` before any model is invoked.
 
-### Stage 3: Fail-Closed Gate of 37 Rules & 4x4 Parity (`stage3_validate_refinement_gate.py`)
-- **Coordinate Auto-Restoration:** Automatically restores any schema, table name, or project coordinate that the LLM may have altered, resetting it back to the immutable `context_locked.json`.
-- **37 Architectural Consistency Rules:** Lints SQL bodies against hardcoded GCP projects, naked table references, SELECT * projections, and blocks phantom sources.
-- **Dataform Dry-Run Compilation:** Generates `compiled_graph.json`.
-- **4x4 Parity Audit:** Verifies exact alignment across 4 representations:
-  $$\text{SSOT Catalog} \equiv \text{Specification JSON} \equiv \text{Compiled SQLx Graph} \equiv \text{Agile Work Item}$$
+### Stage 2: Full Scaffolding of the 5 Coder Artifacts & Canonical DAG YAML (`scaffold_dataform_and_review.py`)
+- **Generates 100% Deterministically:**
+  1. `definitions/01_sources/*.sqlx`: Reuses declarations already on `main`; injects `database: utils.projectId(...)` for Cross-Project sources (`p-*`/`i-*` vs `a-*`).
+  2. `definitions/03_silver/<domain>/<table>.sqlx` (or `04_gold`): References sources strictly via `${ref("schema", "table")}` (2 arguments), with zero hardcoded project/dataset tokens in SQL.
+  3. `definitions/05_assertions/<domain>/assert_<table>.sqlx`: Mandatory `dependencies: ["<target_table>"]` in `config {}`.
+  4. `definitions/06_legacy_contracts/<domain>/vw_<table>.sqlx`: Mandatory backward compatibility view.
+  5. `dags/<region>/<dag_id>.yaml`: Formatted for the canonical **Airflow DAG Factory** schema (`dag_id`, `schedule`, `tags`, `tasks` with `operator` / `bash_command`), auto-injecting `"vars": {"project_id": "<canonical_source_project>"}` when the DAG runs in an analytic project (`a-*`) but compiles ingestion sources (`p-*` / `i-*`).
+- **Anti-Placeholder Detector (`NEEDS_SURGICAL_LLM`):** Flags `SELECT *`, `1=1`, `TODO`, or `PLACEHOLDER`, emitting a ~5 KB surgical prompt for the LLM.
+- **Rule T2.9 Auto-Healing:** Automatically reconciles the Required Datasets table (Section `3.2`) with the exact union of Sources + Targets.
 
-### Stage 4: Parity by Construction, Suites S1–S6 & Atomic Telemetry (`stage4_build_and_publish_pbi.py`)
-- **Consistency Test Suites S1–S6:** Validates the finalized PBI across 6 automated suites:
-  * *Suite S1:* Header and metadata consistency.
-  * *Suite S2:* Upstream source declarations vs. Dataform parity.
-  * *Suite S3:* SQLx model block and column projection integrity.
-  * *Suite S4:* Data quality unit assertions (tests) coverage.
-  * *Suite S5:* Required Datasets (Section 3.2) complete enumeration.
-  * *Suite S6:* Preflight and lineage diagnostic attachments.
-- **Parity by Construction:** Derives all documentation and code structures from the same in-memory object, guaranteeing 100% parity by construction.
-- **Atomic Concurrency:** Emits state records and telemetry using file locking (`fcntl.flock`) and atomic flush (`os.replace` / `tempfile`).
+### Stage 3: Fail-Closed Gate & Local Validators Suite (`validate_refinement_gate.py`)
+- **Self-Contained Local Validation Suite (`scripts/validators/`):**
+  * `test_architect_consistency.py`: Enforces 37 architectural rules and physical disk inspection.
+  * `test_pbi_consistency.py`: Validates suites S1 to S6.
+  * `contract_test.py`: Audits 4x4 Parity across SSOT, Spec JSON, SQLx/YAML on disk, and PBI document, asserting that 100% of artifact links point to real files.
+
+### Stage 4: Parity by Construction, Bidirectional Links & Atomic Telemetry (`build_and_publish_pbi.py`)
+- **Document Construction:** Builds PBI documents with clickable links to all 5 Coder artifacts and legacy code.
+- **Automated Bidirectional Linking:** On publish (`--publish-ado`), creates `Predecessor` and `Successor` links in the Work Item tracker and attaches the `Refined` tag.
+- **Atomic Concurrency:** Emits telemetry records using file locking (`flock`) and atomic replace (`tempfile` + `os.replace`).
 
 ---
 

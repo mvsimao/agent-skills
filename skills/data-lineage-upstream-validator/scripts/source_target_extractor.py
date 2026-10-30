@@ -52,6 +52,7 @@ class SourceTargetExtractor:
         code_text: str,
         explicit_targets: Optional[List[str]] = None,
         non_as_is_consolidations: Optional[Dict[str, str]] = None,  # e.g. {"legacy_stage_tmp": "dim_customer_enriched"}
+        ghost_views_mapping: Optional[Dict[str, str]] = None,  # e.g. {"vw_eventtracks": "silver_platform.eventtracks"}
         default_project: str = "acme-dwh-prod"
     ) -> LineageExtractionResult:
         ctes = self._extract_cte_names(code_text)
@@ -61,6 +62,11 @@ class SourceTargetExtractor:
         retired_tables = []
 
         consolidations = {k.lower(): v for k, v in (non_as_is_consolidations or {}).items()}
+        ghost_views = {k.lower(): v for k, v in (ghost_views_mapping or {
+            "vw_eventtracks": "silver_platform.eventtracks",
+            "legacy_eventtracks": "silver_platform.eventtracks",
+            "view_eventtracks": "silver_platform.eventtracks"
+        }).items()}
 
         # 1. Detect External Ingestion endpoints
         for m in self.JDBC_PATTERN.finditer(code_text):
@@ -73,7 +79,10 @@ class SourceTargetExtractor:
             for m in pat.finditer(code_text):
                 tbl = m.group(1).strip().strip("`").strip('"')
                 if tbl and tbl.lower() not in ctes:
-                    targets.add(tbl)
+                    # Resolve ghost view to canonical physical target if applicable
+                    base_tbl = tbl.lower().split(".")[-1]
+                    canonical_target = ghost_views.get(base_tbl, tbl)
+                    targets.add(canonical_target)
 
         # 3. Extract Reads / Upstream Sources
         for pat in self.READ_PATTERNS:
@@ -86,8 +95,14 @@ class SourceTargetExtractor:
                     if self._is_keyword_or_function(tbl):
                         continue
                     
-                    # Non-AS-IS check: if this legacy intermediate was retired/merged into target
+                    # Ghost View Resolution: map legacy views to canonical physical tables
                     clean_name = tbl_lower.split(".")[-1]
+                    if clean_name in ghost_views:
+                        canonical_ref = ghost_views[clean_name]
+                        sources.add(canonical_ref)
+                        continue
+
+                    # Non-AS-IS check: if this legacy intermediate was retired/merged into target
                     if clean_name in consolidations:
                         retired_tables.append(f"{tbl} (Retired/Merged into '{consolidations[clean_name]}')")
                         continue

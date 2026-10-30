@@ -204,6 +204,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", default=False, help="Simulate cloud checks without running live CLI")
     parser.add_argument("--output-md", "-o", type=str, default=None, help="Path to write the Markdown report")
     parser.add_argument("--output-json", "-j", type=str, default=None, help="Path to write the JSON report")
+    parser.add_argument("--card-id", type=str, default=None, help="Work Item ID to patch diagnostic comment in-place")
+    parser.add_argument("--patch-comment", action="store_true", default=False, help="Update existing card comment via PATCH with deduplication")
     parser.add_argument("--fail-on-blocker", action="store_true", default=False, help="Exit with code 2 if blockers exist")
 
     args = parser.parse_args()
@@ -243,6 +245,14 @@ def main() -> None:
         out_j.parent.mkdir(parents=True, exist_ok=True)
         out_j.write_text(json.dumps(j_rep, indent=2), encoding="utf-8")
         logger.info(f"Wrote JSON to: {out_j}")
+
+    if args.patch_comment and args.card_id:
+        patch_res = PreflightReportGenerator.patch_card_comment(
+            card_id=args.card_id,
+            comment_markdown=md_rep,
+            dry_run=args.dry_run
+        )
+        logger.info(f"Card comment in-place PATCH status: {patch_res}")
 
     if args.fail_on_blocker and not is_ready:
         logger.error("Preflight audit failed with blockers (FAIL-CLOSED gate).")

@@ -181,16 +181,37 @@ class LegacyLineageResolver:
 
         return best_candidate
 
-    def _layer5_static_metadata(self, table_name: str, manifests: List[Dict[str, Any]]) -> Optional[ProducerDiscovery]:
-        for m in manifests:
-            outputs = [o.lower() for o in m.get("target_tables", [])]
-            if table_name in outputs:
+    def _layer5_static_metadata(self, table_name: str, manifests: Any) -> Optional[ProducerDiscovery]:
+        # Support manifests passed as list or dict
+        manifest_items: List[Dict[str, Any]] = []
+        if isinstance(manifests, list):
+            manifest_items = manifests
+        elif isinstance(manifests, dict):
+            for k, v in manifests.items():
+                if isinstance(v, dict):
+                    v_copy = dict(v)
+                    v_copy.setdefault("pipeline_id", k)
+                    manifest_items.append(v_copy)
+                elif isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, dict):
+                            manifest_items.append(item)
+
+        for m in manifest_items:
+            raw_outputs = m.get("target_tables", [])
+            if isinstance(raw_outputs, str):
+                raw_outputs = [raw_outputs]
+            outputs = [o.lower().strip().split(".")[-1] for o in raw_outputs]
+            clean_target = table_name.lower().strip().split(".")[-1]
+            if clean_target in outputs or table_name in outputs:
+                raw_path = m.get("manifest_path", "")
+                norm_path = raw_path.replace("#", "_").replace(" ", "_").rstrip("/\\") if raw_path else None
                 return ProducerDiscovery(
                     target_table=table_name,
                     discovered_producer_job=m.get("pipeline_id", "unnamed_pipeline"),
                     resolution_layer="5_STATIC_METADATA",
                     confidence_score=0.80,
-                    evidence_file=m.get("manifest_path"),
+                    evidence_file=norm_path,
                     details=f"Identified in static pipeline manifest '{m.get('pipeline_id')}'."
                 )
         return None
