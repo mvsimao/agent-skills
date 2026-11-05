@@ -109,13 +109,14 @@ class ArchitectConsistencyValidator:
                     "message": f"Assertion file '{af.name}' missing mandatory dependencies: [\"{target_table}\"]."
                 })
 
-        # R-07: Legacy contracts view must exist
+        # R-07: Legacy contracts view (YAGNI: only required if retrocompatibility is demanded)
+        needs_legacy = locked_context.get("needs_legacy_contract", False) or bool(locked_context.get("legacy_columns"))
         legacy_files = list(art_path.glob(f"definitions/06_legacy_contracts/**/vw_{target_table}.sqlx"))
-        if not legacy_files:
+        if needs_legacy and not legacy_files:
             violations.append({
                 "rule_id": "R-07",
                 "severity": "BLOCKER",
-                "message": f"Mandatory retrocompatibility contract view 'vw_{target_table}.sqlx' not found in 06_legacy_contracts."
+                "message": f"Retrocompatibility contract view 'vw_{target_table}.sqlx' required by legacy mapping but not found in 06_legacy_contracts."
             })
 
         # R-08: Airflow YAML template and vars.project_id check

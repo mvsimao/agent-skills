@@ -50,8 +50,9 @@ class ContractParityValidator:
         # 3. Check physical artifacts on disk
         expected_artifacts = [
             f"05_assertions/**/assert_{target_tbl}.sqlx",
-            f"06_legacy_contracts/**/vw_{target_tbl}.sqlx"
         ]
+        if locked_context.get("needs_legacy_contract") or locked_context.get("legacy_columns"):
+            expected_artifacts.append(f"06_legacy_contracts/**/vw_{target_tbl}.sqlx")
         for pattern in expected_artifacts:
             matches = list(art_dir.glob(f"definitions/{pattern}"))
             if not matches:

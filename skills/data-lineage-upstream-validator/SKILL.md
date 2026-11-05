@@ -1,99 +1,132 @@
 ---
 name: data-lineage-upstream-validator
 description: >-
-  Audits upstream data lineage across 4 verification layers before modernization pipelines advance
-  to development. Features multi-target extraction, Non-AS-IS consolidation awareness, SA Impersonation fallback,
-  Dataform wave fallback across sibling projects, a 6-layer legacy lineage resolver, and detection of 4 governance anomalies.
+  Audits upstream data lineage across 6 verification layers before modernization pipelines advance
+  to development. Features multi-target extraction, Non-AS-IS consolidation awareness, Ghost Views resolution,
+  DW Live coordinate verification with SA Impersonation, 0-rows lock, Dataform draft workspace guardrail,
+  sibling project scanner, 6-layer legacy lineage resolver, generic orchestrator trap detection,
+  and 4 backlog governance anomalies detection.
 ---
 
-# Data Lineage Upstream Validator
+# 🔗 Data Lineage Upstream Validator
 
-A mission-critical data platform governance skill designed to prevent "phantom development"—where data engineers begin coding or refactoring models only to discover days later that source tables do not exist, contracts are mismatched, or upstream jobs have not been migrated yet.
+Skill de pré-voo e auditoria profunda de linhagem de dados upstream em **6 camadas** para impedir o desenvolvimento fantasma (*phantom development*) — garantindo que tabelas de origem realmente existam, estejam populadas, contratos estejam alinhados e dependências de cards predecessores estejam mapeadas sem ambiguidades.
 
 ```mermaid
 flowchart TD
-    SQL["Legacy Code: Spark / SQL / Ingestion"] --> EX["Extractor (Multi-Target & Non-AS-IS Aware)"]
-    EX -->|Upstream Reads| C1{"Layer 1: Live BigQuery DW (with SA Impersonation)?"}
-    C1 -->|Table & Rows Verified| APP1["🟢 LIVE_VERIFIED"]
-    C1 -->|Missing in DW| C2{"Layer 2: Dataform Primary & Sibling Repos?"}
-    
-    C2 -->|Merged in Main| APP2["🟢 DATAFORM_VALIDATED: Wave Clearance"]
-    C2 -->|Draft Workspace Only| BLK1["🔴 UNSTARTED_PREDECESSOR: Local Draft Block"]
-    C2 -->|Missing in Repos| C3["Layer 3: 6-Layer Cascaded Legacy Lineage Resolver"]
+    LEG["Código Legado: Spark / SQL / Ingestão"] --> EXTRACT["Extração Estruturada Multi-Target\nSeparação Leitura vs Escrita (02_bronze / 03_silver / 04_gold)"]
+    EXTRACT --> GHOST["Resolução de Ghost Views & Promoção Canônica\n(Mapeamento para tabelas físicas & consolidações Non-AS-IS)"]
 
-    C3 --> L1["1. Recursive View Expansion"]
-    C3 --> L2["2. Sovereign Job Graph & Overrides"]
-    C3 --> L3["3. Parameterized Ingestion Templates"]
-    C3 --> L4["4. Recurring Writer Catalog Match"]
-    C3 --> L5["5. Static Manifests"]
-    C3 --> L6["6. AST & Regex Write Scanner"]
+    GHOST --> C1{"Camada 1: BigQuery DW Live + SA Impersonation"}
+    C1 -->|Existe & num_rows > 0| LIVE_OK["🟢 Verificado no DW Live"]
+    C1 -->|Existe fisicamente mas .sqlx diverge| ALRT["🟢 Aprovado com Alerta Cirúrgico de Ajuste de .sqlx"]
+    C1 -->|Existe com 0 rows & Predecessor não iniciado| B_UNPOP["🔴 Bloqueio: UNPOPULATED_UPSTREAM"]
+    C1 -->|Não existe no DW| C2{"Camada 2: Fallback Dataform Repos (Primary + Sibling)"}
 
-    L1 & L2 & L3 & L4 & L5 & L6 --> PROD["Discovered Legacy Producer Job"]
-    PROD --> C4["Layer 4: Agile Task Graph & Backlog Auditor"]
-    C4 --> ANOM{"Audit 4 Governance Anomaly Classes"}
-    ANOM -->|INVERTED_LINK / UNLINKED / NO_PBI / OMITTED| FIX["Remediation & Predecessor Prioritization"]
+    C2 -->|Contrato mergeado na main| DF_OK["🟢 Aprovado: DATAFORM_VALIDATED (Esteira por Waves)"]
+    C2 -->|Apenas em Workspace de Rascunho| B_DRAFT["🔴 Bloqueio: UNSTARTED_PREDECESSOR (is_draft_workspace)"]
+    C2 -->|Divergência entre Projetos Irmãos| W_CROSS["🟡 Alerta: CROSS_PROJECT_MISMATCH"]
+    C2 -->|Ausente em Repositórios| C3["Camada 3: Resolução de Linhagem Legada em 6 Camadas\n(resolve_legacy_lineage.py)"]
+
+    subgraph L6["As 6 Camadas de Resolução Legada"]
+        C3 --> L1["1. Expansão recursiva de Views"]
+        C3 --> L2["2. Grafo soberano de jobs + Overrides de arquitetura"]
+        C3 --> L3["3. Templates parametrizados de ingestão"]
+        C3 --> L4["4. Match exato & radical (clean_stem) com score recorrente"]
+        C3 --> L5["5. Reverse scan em metadados estáticos (normalização de paths)"]
+        C3 --> L6A["6. Scanner AST / Regex de escrita (.saveAsTable, INSERT, MERGE)"]
+    end
+
+    L6 --> DISCOVERED["Produtor Legado Mapeado"]
+    DISCOVERED --> C4{"Camada 4: Auditoria do Grafo de Tarefas & Detecção de Armadilhas"}
+    C4 --> DETECT_GEN["Detecção de Armadilhas de Orquestradores Genéricos\n(Card Done que migrou apenas script sem materializar tabelas no DW)"]
+    C4 --> DETECT_ANOM["Auditoria das 4 Anomalias de Governança:\n• INVERTED_LINK\n• UNLINKED_PREDECESSOR\n• PREDECESSOR_WITHOUT_PBI\n• OMITTED_SOURCES"]
+
+    DETECT_GEN & DETECT_ANOM --> SEMAPHORE["Semáforo Executivo & Diagnóstico HTML em 3 Blocos\n(🟢 READY | 🟡 TASK DEPENDENCY | 🔴 BLOCKED)"]
 ```
 
 ---
 
-## 🏛️ The 4 Verification Layers
+## 🏛️ Os Pilares e Camadas de Verificação de Linhagem
 
-### Layer 1: Data Warehouse Live + SA Impersonation + 0-Rows Predecessor Lock
-- Queries BigQuery metadata for physical existence, `num_rows`, and partition update timestamps.
-- **Service Account Impersonation Fallback:** If local credentials receive `403 Forbidden`, automatically cascades to the regional worker SA to verify actual table existence.
-- **Empty Table Predecessor Lock (`UNPOPULATED_UPSTREAM`):** If a physical table exists in BigQuery but contains `0 rows` (schema shell only) and the producer card is still unstarted (`Pre-Wave` / `Refining`), it is classified as a dependency blocker rather than a false-positive clearance.
-- **Ghost Views Resolution & Non-AS-IS Consolidation:** Automatically maps legacy logical views to canonical physical streaming/batch tables (e.g. `silver_platform.eventtracks`), preventing false blockers or phantom targets, and recognizes merged/retired intermediate tables.
+### Extração Estruturada, Resolução de Ghost Views e Filtro Non-AS-IS
+- **Separação Estrita de Fluxos:** Separa rigorosamente tabelas de leitura (*upstream sources*) das tabelas de escrita (*target tables* em `02_bronze`, `03_silver`, `04_gold`), suportando pipelines multi-target e fluxos de ingestão externa pura (JDBC, bancos relacionais, APIs REST sem fontes intermediárias no DW).
+- **Resolução de Ghost Views e Promoção Canônica:** Mapeia automaticamente views lógicas legadas (que não existem mais como tabela física na nuvem) para suas tabelas físicas canônicas de streaming ou batch, promove schemas legados brutos para suas camadas prata correspondentes e reconhece consolidações arquiteturais (*Non-AS-IS*), impedindo falsos bloqueios ou criação de alvos fantasmas.
 
-### Layer 2: Dataform Repository Fallback + Sibling Projects + Draft Guardrail
-- **Wave-Based Modernization:** If the table is not yet materialized in BigQuery production, but its `.sqlx` declaration or table model is merged in the default branch, the skill clears the pipeline (`DATAFORM_VALIDATED`).
-- **Sibling Project Support:** Inspects neighboring ingestion repositories and sibling Dataform projects.
-- **Draft Workspace Guardrail (`is_draft_workspace`):** Rejects unmerged local drafts from predecessor tasks, marking them as `UNSTARTED_PREDECESSOR` to prevent broken builds against uncommitted code.
+---
 
-### Layer 3: 6-Layer Cascaded Legacy Lineage Resolver (`resolve_legacy_lineage.py`)
-When an upstream table is physically missing in BigQuery, this engine automatically determines which legacy job produces it:
-1. **Recursive View Expansion:** Recursively unpacks Hive, Spark SQL, and Trino views to identify underlying physical tables.
-2. **Sovereign Job Graph & Architectural Overrides:** Traverses dependency graphs (Airflow, Oozie, Control-M, Autosys) and applies sovereign architecture overrides for consolidated models.
-3. **Parameterized Ingestion Templates:** Scans generic database-to-lake ingestion configs (CDC/Sqoop/JDBC patterns).
-4. **Target Catalog Match with Recurring Writer Scoring:** Evaluates table name stems and execution frequency scores to rank likely writers.
-5. **Static Code Metadata:** Parses YAML/JSON pipeline definitions and metadata manifests (supporting list or dict structures and normalizing slashes/special characters in paths).
-6. **AST & Regex Write Command Scanner:** Parses source code for physical write operations (`.saveAsTable`, `.insertInto`, `INSERT INTO`, `MERGE INTO`, `CREATE TABLE`).
+### Camada 1: Data Warehouse Live + SA Impersonation + Cruzamento de Coordenadas
+- **Validação Física no BigQuery:** Consulta a API do BigQuery inspecionando existência física, `num_rows` e data de última modificação da partição, com fallback automático de *Service Account Impersonation*.
+- **Alerta Cirúrgico de Ajuste de `.sqlx`:** Se a tabela existir fisicamente na coordenada mapeada na arquitetura, mas o arquivo `01_sources/*.sqlx` apontar para um projeto/dataset divergente, aprova o card emitindo alerta cirúrgico para ajuste imediato da coordenada no `.sqlx`.
+- **Trava de Tabela Vazia (`UNPOPULATED_UPSTREAM`):** Se a tabela existir no BigQuery porém contiver `0 rows` (casca vazia) e o card produtor ainda estiver não iniciado (`Pre-Wave` ou `Refining`), bloqueia o avanço para desenvolvimento até que a carga seja completada.
 
-### Layer 4: Agile Backlog Auditor & The 3-Color Traffic Light Governance
-Cross-references discovered legacy producer jobs against Jira/Azure DevOps backlogs and automatically detects **4 classes of governance anomalies**:
-1. **`INVERTED_LINK`:** When a predecessor task is erroneously registered as a successor in the agile board (circular/inverted dependency).
-2. **`UNLINKED_PREDECESSOR`:** When a real code dependency exists in the backlog but is unlinked on the board.
-3. **`PREDECESSOR_WITHOUT_PBI`:** When an upstream table is produced by a legacy routine that does not yet have a card in the backlog.
-4. **`OMITTED_SOURCES`:** When sources physically read in legacy code were omitted in the ticket's documentation table.
+---
 
-**Standardized 3-Color Traffic Light Header:**
-- `🟢 VERDE (READY)`: 100% of upstream sources exist and are populated, with zero link anomalies or missing dependencies.
-- `🟡 AMARELO (TASK DEPENDENCY)`: Blocked waiting for completion of an identified, mapped predecessor card.
-- `🔴 VERMELHO (BLOCKED / GOVERNANCE GAP)`: Orphan source without producer card, unpopulated 0-row upstream table, or backlog link anomalies.
+### Camada 2: Fallback no Repositório Dataform + Guardrail de Rascunho + Projetos Irmãos
+- **Aprovação por Waves de Modernização:** Em migrações faseadas, se a tabela física ainda não estiver materializada em produção mas seu contrato `.sqlx` já estiver mergeado no repositório Dataform principal, aprova o card (`DATAFORM_VALIDATED`).
+- **Guardrail de Rascunho (`is_draft_workspace`):** Rejeita contratos que residem exclusivamente em workspaces locais ou branches de rascunho de cards predecessores não iniciados, bloqueando como `UNSTARTED_PREDECESSOR`.
+- **Varredura de Projetos Irmãos:** Varre repositórios irmãos de ingestão e domínio para capturar inconsistências entre projetos analíticos e de processamento (`CROSS_PROJECT_MISMATCH`).
+
+---
+
+### Camada 3: Resolução de Linhagem Legada em 6 Camadas (`resolve_legacy_lineage.py`)
+Quando uma tabela de origem está ausente no BigQuery, o motor descobre deterministicamente qual rotina legada a gera:
+1. **Expansão Recursiva de Views:** Expande recursivamente views Hive, Spark SQL e Trino até encontrar as tabelas físicas base.
+2. **Grafo Soberano de Jobs e Overrides Manuais:** Cruza o grafo de dependências da arquitetura corporativa respeitando overrides manuais para pipelines consolidados.
+3. **Templates Parametrizados de Ingestão:** Analisa templates genéricos de ingestão (CDC, Debezium, Sqoop, Dataflow).
+4. **Match Exato e Radical (`clean_stem`) com Score Recorrente:** Aplica análise morfológica de radicais de nomes de tabelas combinada a scores de execução frequente.
+5. **Reverse Scan em Metadados Estáticos:** Varre arquivos de configuração YAML/JSON suportando dicionários ou listas e normalizando caminhos com barras, espaços e caracteres especiais.
+6. **Scanner AST e Regex de Escrita:** Analisa o código-fonte Spark/Python por comandos explícitos de escrita (`.write`, `.saveAsTable`, `INSERT INTO`, `MERGE INTO`, `CREATE TABLE`), além de agendadores legados e tabelas dimensionais estáticas.
+
+---
+
+### Camada 4: Auditoria do Grafo de Tarefas, Detecção de Armadilhas & Semáforo Executivo
+- **Detecção de Armadilhas de Orquestradores Genéricos:** Detecta e bloqueia vínculos com cards marcados como `Done` que apenas migraram scripts orquestradores maestros sem ter materializado as tabelas físicas filhas no Data Warehouse.
+- **Auditoria das 4 Anomalias de Governança:**
+  1. `INVERTED_LINK`: Predecessor erroneamente apontado como sucessor (dependência invertida/circular).
+  2. `UNLINKED_PREDECESSOR`: Dependência real de código existente no backlog mas sem vínculo no board Kanban.
+  3. `PREDECESSOR_WITHOUT_PBI`: Tabela de origem órfã sem nenhum card mapeado no backlog.
+  4. `OMITTED_SOURCES`: Fontes lidas no código legado que foram omitidas na documentação do ticket.
+- **Diagnóstico HTML em 3 Blocos:**
+  - `📌 Resumo`: Visão executiva com Semáforo de Prontidão.
+  - `🎯 Ao time de refinamento`: Ações exatas de correção de vínculos e priorização.
+  - `🔬 Análise complementar`: Rastreabilidade detalhada de todas as fontes auditadas.
+
+---
+
+## 🚦 Semáforo Executivo de Governança
+
+| Status | Semáforo | Descrição | Ação no Pipeline |
+| :--- | :---: | :--- | :--- |
+| **`READY`** | 🟢 | Todas as tabelas de origem existem fisicamente e estão populadas no DW. | Liberado para desenvolvimento imediato. |
+| **`TASK DEPENDENCY`** | 🟡 | Dependência legítima mapeada para card predecessor em andamento. | Aguarda conclusão do predecessor. |
+| **`CROSS-PROJECT MISMATCH`** | 🟡 | Tabela existe no projeto irmão mas declaração local diverge. | Ajustar coordenadas do `.sqlx`. |
+| **`BLOCKED / GOVERNANCE GAP`** | 🔴 | Tabela com 0 rows, card predecessor inexistente (`SEM_PBI`) ou link invertido. | Bloqueado: escalonamento imediato. |
 
 ---
 
 ## 🛠️ CLI Execution & Usage
 
-### Running Lineage Pre-Flight
+### 1. Execução Padrão de Linhagem Upstream
 ```bash
 python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
-  --config /path/to/lineage_config.json \
-  --output-md /path/to/lineage_report.md \
+  --config skills/data-lineage-upstream-validator/examples/sample_lineage_graph.json \
+  --output-md /tmp/lineage_report.md \
   --fail-on-missing
 ```
 
-### With SA Impersonation Fallback
+### 2. Com SA Impersonation e Verificação de 0 Rows
 ```bash
 python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
   --config /path/to/lineage_config.json \
   --impersonate-sa sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com \
-  --output-md /path/to/lineage_report.md
+  --output-md /tmp/lineage_audit.md
 ```
 
-### Dry-Run Local Mode
+### 3. Modo Dry-Run Simulado
 ```bash
 python3 skills/data-lineage-upstream-validator/scripts/validate_lineage.py \
   --config skills/data-lineage-upstream-validator/examples/sample_lineage_graph.json \
   --dry-run \
-  --output-md /tmp/lineage_report.md
+  --output-md /tmp/lineage_dryrun.md
 ```

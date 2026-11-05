@@ -149,18 +149,22 @@ class BoardWorkflowGovernor:
         grouped = defaultdict(list)
         for f in findings:
             res_type = f.get("resource_type", "UNKNOWN").upper()
-            if "DATASET" in res_type:
+            if "REMOTE_FUNCTION" in res_type or "FUNCTION" in res_type or "GATEWAY" in res_type:
+                grouped["BigQuery Remote Functions (AI/LLM Gateway)"].append(f)
+            elif "DATASET" in res_type:
                 grouped["BigQuery Datasets"].append(f)
             elif "IAM" in res_type or "ACL" in res_type or "ROLE" in res_type:
-                grouped["IAM Roles & Permissions"].append(f)
+                grouped["IAM Cross-Project ACLs"].append(f)
             elif "SECRET" in res_type:
-                grouped["Secret Manager Vaults"].append(f)
+                grouped["Secret Manager Multi-Região"].append(f)
             elif "BUCKET" in res_type or "GCS" in res_type:
                 grouped["Cloud Storage Buckets"].append(f)
+            elif "SHEET" in res_type or "DRIVE" in res_type:
+                grouped["Google Sheets / Drive Sharing"].append(f)
             elif "GIT" in res_type or "REPO" in res_type:
-                grouped["Git Repositories"].append(f)
+                grouped["Dataform Git Repositories"].append(f)
             else:
-                grouped["Other Cloud Resources"].append(f)
+                grouped["Conectividade de Rede & Outros Recursos"].append(f)
 
         md = []
         md.append("# 📋 Síntese de Demandas de Infraestrutura para Time SRE / Cloud IaC\n")

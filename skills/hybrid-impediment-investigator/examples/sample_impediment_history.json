@@ -1,0 +1,39 @@
+{
+  "id": "CARD-773",
+  "title": "Migrate Ingestion of Financial Transactions Stream",
+  "origin_column": "Impediment",
+  "moved_by": "Senior Data Engineer",
+  "tags": ["Wave-2", "Finance", "IMP-External"],
+  "links": [
+    {
+      "rel": "predecessor",
+      "target_id": "CARD-504",
+      "title": "Provision bronze_financial_events Kafka Table",
+      "status": "Done"
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-10-15T09:12:00Z",
+      "author": "Engineer A",
+      "text": "Starting refinement for Financial Transactions ingestion pipeline."
+    },
+    {
+      "timestamp": "2026-10-16T14:30:00Z",
+      "author": "Engineer A",
+      "text": "Moving to IMP. Target dataset silver_finance does not exist yet (404 Not Found), and upstream table acme-lakehouse-raw.bronze_financial_events.events_raw is waiting for PR https://github.com/acme/terraform-infra/pull/402 to merge."
+    },
+    {
+      "timestamp": "2026-10-20T11:00:00Z",
+      "author": "DevOps Engineer",
+      "text": "PR #402 was merged. Created dataset silver_finance via Terraform module in southamerica-east1."
+    }
+  ],
+  "spec": {
+    "target_table": "acme-dwh-prod.silver_finance.fct_financial_transactions",
+    "upstream_sources": [
+      "acme-lakehouse-raw.bronze_financial_events.events_raw"
+    ],
+    "service_account": "sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com"
+  }
+}

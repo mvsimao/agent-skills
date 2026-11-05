@@ -3,112 +3,134 @@ name: cloud-preflight-infra-auditor
 description: >-
   Audits Cloud & IaC infrastructure readiness across 6 pillars before legacy Databricks/Spark
   modernization to GCP (BigQuery + Dataform + Airflow). Features project alias normalization,
-  Service Account Impersonation cascade, live BigQuery smoke query, cross-project IAM ACL checks,
-  and copyable Terraform auto-remediations.
+  strict non-prod protection, SA Impersonation cascade, live BigQuery smoke query, cross-project IAM ACL checks,
+  Remote Functions AI/LLM Gateway audit, Secret Manager archetype governance, GCS tiering,
+  Google Sheets live read probes, Git repo validation, and copyable Terraform auto-remediations.
 ---
 
-# Cloud Preflight Infrastructure Auditor
+# 🛡️ Cloud Preflight Infrastructure Auditor
 
-A deterministic cloud infrastructure readiness and pre-flight auditing skill for modern data platform modernizations (**Databricks / Delta Lake / Spark to GCP BigQuery + Dataform + Airflow**).
-
-This skill performs a rigorous 6-pillar inspection across two critical lifecycle phases:
-1. **Pre-Refinement:** Audits the central catalog in `origin/main` and legacy source code before engineering begins.
-2. **Post-Refinement:** Enforces **AND-logic cross-validation** across: (1) Work item specification, (2) compiled `.sqlx` files, AND (3) the sovereign metadata graph.
+Skill de auditoria preventiva de prontidão de infraestrutura Cloud/IaC (6 pilares) que roda tanto **antes do refinamento técnico** (lendo o catálogo central em `origin/main` e o código legado) quanto **durante/após o refinamento e desenvolvimento** (validando com lógica `AND` o que está na especificação, nos `.sqlx` E na cascata soberana de catálogos).
 
 ```mermaid
 flowchart TD
-    A["Legacy Code & origin/main Catalog"] --> B["Preflight Auditor Engine"]
-    B --> P1["Pillar 1: Projects, Alias Normalization & Smoke Query"]
-    B --> P2["Pillar 2: BigQuery Datasets & Cross-Project IAM ACLs"]
-    B --> P3["Pillar 3: Secret Manager & Archetype Governance"]
-    B --> P4["Pillar 4: GCS Storage & Lakehouse Tiering"]
-    B --> P5["Pillar 5: External Tables & Dataform Git Repos"]
-    B --> P6["Pillar 6: VPC Egress & Cloud NAT Discovery"]
+    CAT["Catálogo Central (origin/main) & Código Legado"] --> AUDITOR["cloud-preflight-infra-auditor Engine"]
+    
+    subgraph P1["Pilar 1: Projetos Cloud, Aliases, SAs & Smoke Query"]
+        AUDITOR --> PIL1["Valida status ACTIVE (Target, Upstream, Secrets, Staging)\nNormalização de aliases (short_name / sufixos)\nProteção estrita não-prod (hmg/dev nunca apontam para prd)\nExistência e ativação de Service Accounts\nLive Smoke Query: SELECT 1 (APIs, faturamento, cotas)"]
+    end
 
-    P1 & P2 & P3 & P4 & P5 & P6 --> M{"Service Account Impersonation Cascade"}
-    M -->|404 Not Found| BLOCK["🔴 MISSING_INFRA: Hard Blocker + Terraform Remediation"]
-    M -->|403 Forbidden with Impersonation| RESTRICT["🟡 EXISTS_RESTRICTED_RUNNER: Non-blocking Warning"]
-    M -->|200 OK / Enabled| PASS["🟢 READY: Automated Clearance"]
+    subgraph P2["Pilar 2: Datasets BigQuery, Remote Functions & Cross-Project IAM ACL"]
+        AUDITOR --> PIL2["Existência física datasets (bronze, silver, gold, staging)\nCloud Foundation Fabric / FAST & overrides infra-reviewed\nFiltro de falsos positivos (.iam.gserviceaccount.com, EMAIL)\nDescoberta Pré-Refinamento Cross-Project IAM (roles/bigquery.dataViewer)\nAuditoria Cross-Domain BigQuery Remote Functions (AI/LLM Gateway: dataViewer + connectionUser)\nBlocos Terraform (google_bigquery_dataset_iam_member) + CLI bq/gcloud"]
+    end
 
-    BLOCK & RESTRICT & PASS --> R["3-Tier Executive Preflight Report"]
+    subgraph P3["Pilar 3: Secret Manager Multi-Região & Governança por Arquétipo"]
+        AUDITOR --> PIL3["Varredura em cascata (catálogos, specs, código legado secrets.get)\nGovernança por arquétipo (DATAFORM_SQL_TRANSFORM não bloqueia)\nSegredos bloqueiam apenas Ingestão, Egress ou Orquestração\nResolução multi-região e validação de versão ENABLED"]
+    end
+
+    subgraph P4["Pilar 4: Object Storage (GCS Buckets) & Governança de Camadas"]
+        AUDITOR --> PIL4["Extração URIs gs:// via REST API\nSeparação entre buckets gerenciados Iceberg/Raw e buckets regionais landing/staging/sftp"]
+    end
+
+    subgraph P5["Pilar 5: Fontes Externas (Drive/Sheets), Repos Git e Tabelas DML-Only"]
+        AUDITOR --> PIL5["Live Probe: SELECT 1 FROM ext_table LIMIT 1 (Captura 403 Drive Credentials)\nValidação ao vivo na API Git do repositório Dataform\nExistência física DW de tabelas DML-Only (MERGE/UPDATE/DELETE sem DDL)"]
+    end
+
+    subgraph P6["Pilar 6: Conectividade de Rede Externa (VPC / Cloud NAT / Firewall via Sandbox VM)"]
+        AUDITOR --> PIL6["Scan de endpoints (host:port, JDBC, SFTP, APIs, Kafka, EventHub)\nHandshake TCP/L7 via Sandbox VM\nDescoberta de IP de saída Cloud NAT para whitelisting"]
+    end
+
+    PIL1 & PIL2 & PIL3 & PIL4 & PIL5 & PIL6 --> CASCADE{"Cascata de SA Impersonation & Matriz Determinística"}
+    CASCADE -->|404 Not Found| B1["🔴 MISSING_INFRA: Gera Terraform + Bloco IaC"]
+    CASCADE -->|200 OK sem SA na ACL| B2["🔴 MISSING_IAM_ACL: Bloco google_bigquery_dataset_iam_member"]
+    CASCADE -->|403 Drive Credentials| B3["🔴 MISSING_GSHEETS_SHARE: Escalonamento com e-mail da SA"]
+    CASCADE -->|403 Runner sem SA local| W1["🟡 EXISTS_RESTRICTED_RUNNER: Nota Técnica (Não Bloqueia)"]
+    CASCADE -->|200 OK / Válido| PASS["🟢 READY: Prontidão Aprovada"]
+
+    B1 & B2 & B3 & W1 & PASS --> REPORT["Comentário In-Place (PATCH) em 3 Blocos"]
 ```
 
 ---
 
-## 🏛️ The 6 Pillars of Preflight Readiness
+## 🏛️ Os 6 Pilares de Prontidão de Infraestrutura
 
-### Pillar 1: Projects, Alias Normalization, Service Accounts & Smoke Query
-- **Alias Normalization:** Resolves historical IaC naming aliases (such as `raw`, `prod`, `dwh`, `vault`, `stage` or legacy suffixes) into active, authoritative GCP project IDs.
-- **Active State Validation:** Confirms `ACTIVE` lifecycle state for Target (`acme-dwh-prod`), Upstream (`acme-lakehouse-raw`), Secrets, and Staging projects.
-- **Service Account Status:** Asserts existence and active state of workload runner identities (e.g. `sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com`).
-- **Live Smoke Query:** Executes a live query probe (`SELECT 1 AS readiness_check`) on BigQuery to guarantee APIs are enabled, billing accounts are linked, and compute quotas (`bigquery.jobs.create`) are healthy.
+### Pilar 1 — Projetos Cloud, Normalização de Aliases, Service Accounts e Smoke Query
+- **Status `ACTIVE` de Projetos:** Verifica se todos os projetos envolvidos (Target, Upstream Sources, Regional Secrets e Staging/Backfill) estão ativos na API do Google Cloud Resource Manager.
+- **Normalização de Aliases IaC:** Resolve aliases históricos de nomenclatura IaC (`short_name`, mapeamento de sufixos legados e consolidação de estágios de governança para projetos ativos reais, ex: `raw` ➔ `acme-lakehouse-raw-prod`, `dwh` ➔ `acme-dwh-prod`).
+- **Proteção Estrita de Ambientes Não-Produtivos:** Garante rigorosamente que ambientes de homologação/desenvolvimento (`hmg`, `dev`, `uat`) nunca apontem acidentalmente para projetos ou datasets de produção (`prd`).
+- **Service Accounts Regionais:** Valida existência e estado ativo das Service Accounts regionais de ingestão e execução (ex: `sa-dataform-executor@...`).
+- **Live Smoke Query no BigQuery:** Executa uma query de fumaça ao vivo (`SELECT 1 AS live_smoke_probe`) para validar se a API do BigQuery está habilitada, a conta de faturamento está vinculada e há cotas de jobs (`bigquery.jobs.create`).
 
-### Pillar 2: BigQuery Datasets & Cross-Project IAM ACL Audit
-- **Tier Verification & Fast-Landing Governance:** Verifies physical existence of dataset boundaries (`bronze_*`, `silver_*`, `gold_*`, `staging_*`), recognizing pre- and post-modernization IaC conventions (e.g. Cloud Foundation Fabric / FAST).
-- **Regex False-Positive Filtering:** Automatically discards non-dataset tokens caught by naive regexes (such as `.iam.gserviceaccount.com` suffixes or egress destinations like `NA`, `EMAIL`, `SFTP`).
-- **Cross-Project Dependency Check:** Inspects cross-project dependencies (`source_project != target_project`) even before `.sqlx` code is authored.
-- **IAM Policy Verification:** Validates that the consumer Service Account holds `roles/bigquery.dataViewer` (including verification of shared AI/LLM Gateway datasets when applicable).
-- **Auto-Remediation:** Emits copyable Terraform resources (`google_bigquery_dataset_iam_member`) and `bq add-iam-policy-binding` CLI commands + grouped summary list ready for SRE/IaC teams.
+### Pilar 2 — Datasets BigQuery, Remote Functions (AI/LLM Gateway) & Auditoria Cross-Project IAM ACL
+- **Existência Física dos Datasets:** Verifica datasets em todas as camadas (`bronze_*`, `silver_*`, `gold_*`, `staging_*`), reconhecendo convenções pré- e pós-modernização IaC (ex: Cloud Foundation Fabric / FAST).
+- **Overrides de Revisão Manual:** Respeita anotações de infraestrutura aprovada (`infra-reviewed`).
+- **Filtro de Falsos Positivos de Regex:** Descarta automaticamente tokens que não são tabelas/datasets, tais como sufixos `.iam.gserviceaccount.com` ou destinos de egress como `NA`, `EMAIL`, `SFTP`, `WEBHOOK`.
+- **Descoberta Pré-Refinamento de Cross-Project IAM:** Cruza o grafo de dependências e metadados estáticos mesmo antes de existirem arquivos `.sqlx`. Quando `source_project != target_project`, inspeciona ao vivo a ACL do dataset (`datasets.get` / `getIamPolicy`) para assegurar que a Service Account consumidora possua `roles/bigquery.dataViewer` (diretamente ou herdada via Google Group).
+- **Auditoria Cross-Domain de BigQuery Remote Functions (AI/LLM Gateway):** Quando o pipeline invoca funções remotas de inferência ou LLM de outro domínio, valida simultaneamente a permissão de leitura no dataset compartilhado (`roles/bigquery.dataViewer`) e o vínculo de uso na conexão Cloud Resource (`roles/bigquery.connectionUser`).
+- **Geração Automática de Terraform e CLI:** Emite blocos prontos de Terraform (`google_bigquery_dataset_iam_member`) e comandos CLI (`gcloud projects add-iam-policy-binding` / `bq add-iam-policy-binding`), além de síntese agrupada pronta para o time de SRE/IaC.
 
-### Pillar 3: Secret Manager & Archetype Governance
-- **Archetype Governance:** Pure SQL transformation pipelines (Dataform / BigQuery ELT) execute inside the BigQuery engine without vault credentials in runtime. Secret references are non-blocking warnings.
-- **Ingestion & Egress Pipelines:** External pipelines (Airflow / Cloud Run / Dataflow) must have secrets provisioned with at least one `ENABLED` secret version.
+### Pilar 3 — Secret Manager Multi-Região & Governança por Arquétipo
+- **Varredura em Cascata:** Mapeia referências a segredos em catálogos canônicos, especificações técnicas e código legado (`secrets.get`, `.yaml`, `.py`).
+- **Governança por Arquétipo:** Pipelines puramente de transformação SQL no DW (`DATAFORM_SQL_TRANSFORM`) operam dentro da engine do BigQuery sem acesso direto a cofres externos no runtime; nesses casos, referências a segredos geram alertas sem bloquear o pipeline. Bloqueios estritos aplicam-se apenas a Ingestão, Egress ou Orquestradores externos (Airflow/Cloud Run).
+- **Resolução Multi-Região & Versão Ativa:** Suporta resolução por nome exato e prefixos regionais (`southamerica-east1`, `us-central1`), garantindo que haja ao menos uma versão `ENABLED`.
 
-### Pillar 4: Object Storage (GCS Buckets) & Layer Governance
-- **Bucket Extraction:** Discovers `gs://` URIs across legacy PySpark configurations.
-- **Tier Segregation:** Enforces segregation between managed lakehouse tables (Apache Iceberg / Parquet lakehouses with versioning enabled) and dedicated landing/staging buckets (configured with 14-day automatic deletion lifecycle rules).
+### Pilar 4 — Object Storage (GCS Buckets) & Governança de Camadas
+- **Extração de URIs `gs://`:** Identifica buckets configurados no código legado e valida existência física via REST API.
+- **Separação de Camadas:** Impõe distinção arquitetural entre buckets dedicados a tabelas gerenciadas de lakehouse (Apache Iceberg / Delta Lake com versionamento ativo) e buckets regionais transitórios dedicados a *landing / staging / egress / SFTP* (com regras de ciclo de vida de expiração configuradas).
 
-### Pillar 5: External Sources (Drive/Sheets), Git Repos & DML Targets
-- **Google Sheets 403 Probe:** Runs a live probe (`SELECT 1 FROM ext_table LIMIT 1`) to intercept `403 Drive credentials` errors before pipeline execution, generating step-by-step sharing instructions for the Service Account.
-- **Dataform Git Repository:** Verifies Git repository access and remote branch availability via API/Git.
-- **DML-Only Tables:** Detects target tables populated exclusively via `MERGE`, `UPDATE`, or `DELETE`, ensuring they are pre-created via DDL before pipeline execution.
+### Pilar 5 — Fontes Externas (Drive/Sheets), Repositórios Git e Tabelas DML-Only
+- **Live Probe de Google Sheets:** Executa leitura real (`SELECT 1 FROM <external_table> LIMIT 1`) em External Tables baseadas no Google Sheets para capturar erros reais `403 Permission denied while getting Drive credentials`, gerando imediatamente o bloco de escalonamento com o e-mail exato da Service Account de ingestão para compartilhamento da planilha.
+- **Validação ao Vivo de Repositórios Git:** Verifica na API do Git (GitHub, GitLab, Azure Repos) se o repositório Dataform de destino existe e tem branches acessíveis.
+- **Tabelas DML-Only:** Para tabelas operadas exclusivamente via DML (`type: "operations"` contendo `MERGE`, `UPDATE` ou `DELETE` sem DDL `CREATE TABLE`), valida se já existem fisicamente no DW, ignorando alvos descartados (`discarded_by`) ou de camadas de aplicação.
 
-### Pillar 6: External Network Connectivity (VPC, Cloud NAT & Egress)
-- **Endpoint Discovery:** Scans code for external endpoints (`host:port`, JDBC URLs, SFTP, APIs, Kafka).
-- **Network Handshake:** Performs socket-level TCP/L7 handshakes from sandbox instances.
-- **Cloud NAT Egress Whitelisting:** Resolves public outbound Cloud NAT IP and formats firewall whitelist requests for enterprise SecOps/NetOps teams.
+### Pilar 6 — Conectividade de Rede Externa (VPC / Cloud NAT / Firewall via Sandbox VM)
+- **Identificação de Endpoints Externos:** Detecta endpoints remotos (`host:port`, JDBC, SFTP, APIs REST, Kafka, EventHub) a partir do código e assinaturas de conexão.
+- **Handshake e Sandbox VM:** Quando acionado ou com VM Sandbox regional ativa, executa teste de handshake TCP / Layer 7.
+- **Cloud NAT Egress Discovery:** Descobre o IP público de saída do Cloud NAT e gera a solicitação padronizada de *firewall whitelist* para o time de redes/segurança.
 
 ---
 
-## 🎯 SA Impersonation Cascade & Deterministic Matrix
+## 🎯 Cascata de Impersonation & Matriz Zero Falso Positivo / Zero Falso Negativo
 
-A critical failure mode in automated modernization pipelines is failing runs due to operator runner permissions rather than infrastructure absence:
+| Cenário de Diagnóstico | Código de Status | Ação no Pipeline | Classificação |
+| :--- | :--- | :--- | :--- |
+| **Recurso não existe no GCP** | `404 Not Found` | Bloqueia refinamento (`🔴 MISSING_INFRA`) | Bloqueio real (IaC pendente) |
+| **Dataset existe, mas SA não está na ACL** | `200 OK` (sem SA) | Bloqueia refinamento (`🔴 MISSING_IAM_ACL`) | Bloqueio real (Gera Terraform) |
+| **Planilha Drive sem permissão para SA** | `403 Drive Credentials` | Bloqueia refinamento (`🔴 MISSING_GSHEETS_SHARE`) | Bloqueio real (Gera e-mail da SA) |
+| **Runner local sem permissão, mas recurso existe** | `403 Forbidden` no Runner | Prossegue refinamento com nota (`🟡 EXISTS_RESTRICTED_RUNNER`) | **Zero Falso Positivo** |
+| **Permissão herdada por Google Group** | `200 OK via Group` | Prossegue refinamento (`🟡 GROUP_ACL_VERIFIED_OR_NOTE`) | **Zero Falso Positivo** |
+| **VM Sandbox offline para teste de rede** | Timeout / Offline | Prossegue com nota (`🟡 SKIPPED_SANDBOX_OFFLINE`) | Não bloqueia esteira |
 
-1. **Automated Impersonation Cascade:** When the local operator runner receives `403 Forbidden` while inspecting a dataset or cloud asset, the auditor automatically attempts **Service Account Impersonation** (using the regional ingestion/processing SA via IAM Credentials API).
-2. **Deterministic Matrix:**
-   - **`404 Not Found` (`🔴 MISSING_INFRA`):** Hard blocker. The resource physically does not exist in the cloud. Halts refinement and outputs copyable Terraform IaC.
-   - **`403 Forbidden` without local permission (`🟡 EXISTS_RESTRICTED_RUNNER`):** Non-blocking warning. The resource exists in the cloud project directory, but the local operator has restricted visibility. Refinement proceeds with an audit note.
-   - **`200 OK / Enabled` (`🟢 PASS`):** Verified healthy and available in target cloud environment.
-3. **In-Place (`PATCH`) Comment Deduplication:** Updates existing diagnostic comments on the card via `PATCH` (deduplicating previous reports) rather than creating cluttered multiple comments.
+### Comentário Executivo Padronizado em 3 Blocos (In-Place via `PATCH`)
+1. **`📌 Bloco 1: Resumo`**: Diagnóstico consolidado da prontidão, semáforo executivo e tabela de recursos avaliados.
+2. **`🎯 Bloco 2: Ao time de Infraestrutura (IaC / SRE)`**: Blocos de código prontos em Terraform HCL, comandos CLI (`gcloud`/`bq`) e instruções de permissão de Service Account.
+3. **`🔬 Bloco 3: Análise complementar dos 6 Pilares`**: Tabela detalhada de cada um dos 6 pilares com latência, status de resposta e evidência auditável.
 
 ---
 
 ## 🛠️ CLI Execution & Usage
 
-### Pre-Refinement Mode (Catalog & Legacy Code)
+### 1. Auditoria Pré-Refinamento (Catálogo origin/main + Código Legado)
 ```bash
 python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
-  --manifest /path/to/pipeline_manifest.json \
+  --manifest skills/cloud-preflight-infra-auditor/examples/sample_manifest.json \
   --phase pre_refinement \
-  --output-md /path/to/preflight_report.md \
+  --output-md /tmp/preflight_report.md \
   --fail-on-blocker
 ```
 
-### Post-Refinement Cross-Validation (AND-Logic with .sqlx & Spec)
+### 2. Auditoria Pós-Refinamento (Lógica AND: Spec + SQLx + Catálogos)
 ```bash
 python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
-  --manifest /path/to/pipeline_manifest.json \
+  --manifest skills/cloud-preflight-infra-auditor/examples/sample_manifest.json \
   --phase post_refinement \
-  --sqlx-dir /path/to/dataform/definitions \
-  --spec-file /path/to/spec.json \
-  --impersonate-sa sa-dataform-executor@acme-dwh-prod.iam.gserviceaccount.com \
-  --output-md /path/to/post_refinement_report.md
+  --output-md /tmp/post_refinement_report.md
 ```
 
-### Local Dry-Run Simulation
+### 3. Modo Dry-Run / Teste Local sem Chamadas de Nuvem
 ```bash
 python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
   --manifest skills/cloud-preflight-infra-auditor/examples/sample_manifest.json \
   --dry-run \
-  --output-md /tmp/preflight_report.md
+  --output-md /tmp/simulated_preflight.md
 ```

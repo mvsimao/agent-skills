@@ -142,6 +142,25 @@ class DataformCrossProjectGuard:
                     "details": f"Found single-argument references {single_matches}. Recommend upgrading to ${{ref('schema', 'table')}}."
                 })
 
+            # Check invalid GROUP BY ... AS alias (BigQuery syntax error)
+            group_by_as_match = re.search(r"\bGROUP\s+BY\b[^;]*\bAS\b", content, re.IGNORECASE)
+            if group_by_as_match:
+                findings.append({
+                    "file": str(mf),
+                    "issue": "INVALID_GROUP_BY_ALIAS",
+                    "severity": "BLOCKER",
+                    "details": "Found invalid 'GROUP BY ... AS alias' syntax which fails compilation in BigQuery."
+                })
+                if apply_fixes and not self.dry_run:
+                    # Clean out AS <alias> from GROUP BY clauses
+                    def clean_groupby(m: re.Match) -> str:
+                        clause = m.group(0)
+                        return re.sub(r"\s+AS\s+[a-zA-Z0-9_]+", "", clause, flags=re.IGNORECASE)
+                    fixed_content = re.sub(r"\bGROUP\s+BY\s+[^;]+", clean_groupby, content, flags=re.IGNORECASE)
+                    if fixed_content != content:
+                        mf.write_text(fixed_content, encoding="utf-8")
+                        logger.info(f"Auto-healed GROUP BY AS syntax in: {mf}")
+
         return findings
 
     def audit_and_fix_assertions(

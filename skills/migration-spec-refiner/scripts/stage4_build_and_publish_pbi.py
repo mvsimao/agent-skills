@@ -78,7 +78,11 @@ class SpecPublisher:
         md.append(f"| **1. Source Declarations** | `definitions/01_sources/` | 🟢 Generated |")
         md.append(f"| **2. Production Model** | `definitions/{layer_folder}/{domain}/{target_tbl}.sqlx` | 🟢 Generated |")
         md.append(f"| **3. Unit Assertion** | `definitions/05_assertions/{domain}/assert_{target_tbl}.sqlx` | 🟢 Generated |")
-        md.append(f"| **4. Legacy Contract View** | `definitions/06_legacy_contracts/{domain}/vw_{target_tbl}.sqlx` | 🟢 Generated |")
+        legacy_view_p = artifacts_dir / f"definitions/06_legacy_contracts/{domain}/vw_{target_tbl}.sqlx"
+        legacy_status = "🟢 Generated" if legacy_view_p.exists() else "⚪ Skipped (YAGNI / No legacy rename required)"
+        legacy_path_display = f"`definitions/06_legacy_contracts/{domain}/vw_{target_tbl}.sqlx`" if legacy_view_p.exists() else "*N/A (Direct modern access)*"
+
+        md.append(f"| **4. Legacy Contract View** | {legacy_path_display} | {legacy_status} |")
         md.append(f"| **5. Airflow DAG YAML** | `dags/{locked_context.get('region', 'southamerica-east1')}/dag_modernized_{domain}_{target_tbl}.yaml` | 🟢 Generated |")
         md.append("\n")
 

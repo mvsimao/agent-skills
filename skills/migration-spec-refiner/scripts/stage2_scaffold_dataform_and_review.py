@@ -43,8 +43,10 @@ class DataformScaffolder:
         locked_context: Dict[str, Any],
         existing_spec_markdown: Optional[str] = None,
         output_dir: str = "./refinement_artifacts",
-        dataform_main_repo_path: Optional[str] = None
+        dataform_main_repo_path: Optional[str] = None,
+        with_legacy_view: bool = False
     ) -> Dict[str, Any]:
+        self.with_legacy_view = with_legacy_view
         target_project = locked_context["target_project"]
         target_dataset = locked_context["target_dataset"]
         target_table = locked_context["target_table"]
@@ -176,23 +178,44 @@ class DataformScaffolder:
         scaffolded_files[str(assertion_p)] = assertion_content
 
         # -------------------------------------------------------------
-        # ARTIFACT 4: definitions/06_legacy_contracts/<domain>/vw_<table>.sqlx
+        # ARTIFACT 4: definitions/06_legacy_contracts/<domain>/vw_<table>.sqlx (YAGNI: On-Demand)
         # -------------------------------------------------------------
-        legacy_view_content = (
-            f"config {{\n"
-            f'  type: "view",\n'
-            f'  schema: "legacy_contracts_{domain}",\n'
-            f'  name: "vw_{target_table}",\n'
-            f'  description: "Retrocompatibility contract view for legacy downstream consumers"\n'
-            f"}}\n\n"
-            f"SELECT\n"
-            f"  *\n"
-            f"FROM\n"
-            f"  ${{ref(\"{target_dataset}\", \"{target_table}\")}}\n"
-        )
-        legacy_p = legacy_contracts_dir / f"vw_{target_table}.sqlx"
-        legacy_p.write_text(legacy_view_content, encoding="utf-8")
-        scaffolded_files[str(legacy_p)] = legacy_view_content
+        legacy_cols = locked_context.get("legacy_columns", {})
+        has_renamed_cols = any(orig != orig.lower() for orig in legacy_cols.keys()) if legacy_cols else False
+        needs_legacy_view = getattr(self, "with_legacy_view", False) or locked_context.get("needs_legacy_contract", False) or has_renamed_cols
+
+        if needs_legacy_view:
+            legacy_contracts_dir.mkdir(parents=True, exist_ok=True)
+            # Build backward-compatible column projections if legacy mapping exists
+            if legacy_cols:
+                col_projections = []
+                for orig_name, snake_name in legacy_cols.items():
+                    if orig_name != snake_name:
+                        col_projections.append(f"  {snake_name} AS {orig_name}")
+                    else:
+                        col_projections.append(f"  {snake_name}")
+                select_clause = ",\n".join(col_projections)
+            else:
+                select_clause = "  *"
+
+            legacy_view_content = (
+                f"config {{\n"
+                f'  type: "view",\n'
+                f'  schema: "legacy_contracts_{domain}",\n'
+                f'  name: "vw_{target_table}",\n'
+                f'  description: "Retrocompatibility contract view for legacy downstream consumers"\n'
+                f"}}\n\n"
+                f"SELECT\n"
+                f"{select_clause}\n"
+                f"FROM\n"
+                f"  ${{ref(\"{target_dataset}\", \"{target_table}\")}}\n"
+            )
+            legacy_p = legacy_contracts_dir / f"vw_{target_table}.sqlx"
+            legacy_p.write_text(legacy_view_content, encoding="utf-8")
+            scaffolded_files[str(legacy_p)] = legacy_view_content
+            logger.info(f"Generated backward-compatible legacy view: {legacy_p}")
+        else:
+            logger.info(f"[YAGNI] Skipped redundant legacy view for '{target_table}' (no legacy renaming detected).")
 
         # -------------------------------------------------------------
         # ARTIFACT 5: dags/<region>/<dag_id>.yaml (Airflow DAG Factory)
