@@ -237,9 +237,9 @@ python3 skills/cloud-preflight-infra-auditor/scripts/audit_orchestrator.py \
   - **Layer 4 (Agile Task Graph & 3-Color Traffic Light Governance):**
     - Detects 4 anomaly classes: `INVERTED_LINK`, `UNLINKED_PREDECESSOR`, `PREDECESSOR_WITHOUT_PBI`, and `OMITTED_SOURCES`.
     - Emits standardized 3-Color Traffic Light header:
-      - `🟢 VERDE (READY)`: 100% of sources verified/populated with zero link anomalies.
-      - `🟡 AMARELO (TASK DEPENDENCY)`: Blocked waiting for mapped predecessor task.
-      - `🔴 VERMELHO (BLOCKED / GOVERNANCE GAP)`: Orphan source, unpopulated 0-row table, or backlog link anomalies.
+      - `🟢 GREEN (READY)`: 100% of sources verified/populated with zero link anomalies.
+      - `🟡 YELLOW (TASK DEPENDENCY)`: Blocked waiting for mapped predecessor task.
+      - `🔴 RED (BLOCKED / GOVERNANCE GAP)`: Orphan source, unpopulated 0-row table, or backlog link anomalies.
 
 ```bash
 # Upstream Lineage Preflight
