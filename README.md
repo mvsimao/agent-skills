@@ -36,9 +36,9 @@ The metrics below were audited in production during the modernization of a real 
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                PRODUCTION BENCHMARK SUMMARY                           │
+│                                PRODUCTION BENCHMARK SUMMARY                            │
 ├──────────────────────────┬─────────────────────────────┬───────────────────────────────┤
-│ Metric                   │ Legacy Prompt-Only LLM Chain│ Modern .py-First + LLM Suite │
+│ Metric                   │ Legacy Prompt-Only LLM Chain│ Modern .py-First + LLM Suite  │
 ├──────────────────────────┼─────────────────────────────┼───────────────────────────────┤
 │ Cycle Time / Card        │ ~52.9 min (12h 20m / 14 cards)│ 11.3s (det.) / 30-90s (w/ LLM) │
 │ Speedup Factor           │ Baseline (1x)               │ 95x to 280x faster (-99.6%)   │
