@@ -264,6 +264,9 @@ class DataformScaffolder:
         surgical_prompt = None
         if needs_surgical_llm:
             surgical_prompt = self._generate_surgical_prompt(locked_context, model_sqlx_template)
+            prompt_file = out_path / f"{target_table}_surgical_llm_prompt.md"
+            prompt_file.write_text(surgical_prompt, encoding="utf-8")
+            logger.info(f"Generated surgical LLM prompt file at: {prompt_file}")
 
         # -------------------------------------------------------------
         # Rule T2.9: Auto-Healing of Section 3.2 Required Datasets
@@ -339,15 +342,52 @@ class DataformScaffolder:
     def _generate_surgical_prompt(self, ctx: Dict[str, Any], scaffolded_sqlx: str) -> str:
         sources_list = ", ".join([f"${{ref('{s.get('dataset_id')}', '{s.get('table_id')}')}}" for s in ctx.get("canonical_sources", [])])
         legacy_code = ctx.get("legacy_source_code", "-- No legacy code provided --")
+
+        # Wave 1: Ingest Live Physical BigQuery Upstream Metadata
+        physical_schemas_md = []
+        drift_warnings_md = []
+        for s in ctx.get("canonical_sources", []):
+            s_name = s.get("table_id")
+            s_ds = s.get("dataset_id")
+            live_schema = s.get("live_bq_schema") or []
+            part_col = s.get("live_partition_field")
+            part_type = s.get("live_partition_type", "DAY")
+            req_filter = s.get("require_partition_filter", False)
+            cluster_keys = s.get("clustering_fields") or []
+
+            schema_desc = f"- **Upstream Table:** `{s_ds}.{s_name}`\n"
+            if part_col:
+                schema_desc += f"  - Partition Column: `{part_col}` ({part_type}) | Mandatory Filter (`require_partition_filter`): **{req_filter}**\n"
+            if cluster_keys:
+                schema_desc += f"  - Clustering Keys: `{cluster_keys}`\n"
+            if live_schema:
+                col_defs = ", ".join([f"`{col['name']}` ({col['type']})" for col in live_schema[:15]])
+                schema_desc += f"  - Physical Columns ({len(live_schema)} total): {col_defs}\n"
+            physical_schemas_md.append(schema_desc)
+
+            missing_drift = s.get("schema_drift_missing_in_bq") or []
+            if missing_drift:
+                drift_warnings_md.append(
+                    f"- ⚠️ **Schema Drift Alert for `{s_name}`:** Columns in legacy references `{missing_drift}` DO NOT exist physically in BigQuery! DO NOT select these columns directly."
+                )
+
+        schema_section = "\n".join(physical_schemas_md) if physical_schemas_md else "_No physical metadata available._"
+        drift_section = "\n".join(drift_warnings_md) if drift_warnings_md else "✅ No column drift detected across upstream sources."
+
         return (
             f"### SURGICAL LLM TRANSLATION PROMPT (~5 KB)\n"
             f"Target: `{ctx['target_dataset']}.{ctx['target_table']}` (Type: `{ctx.get('table_type', 'incremental')}`)\n"
             f"Available Canonical Sources: {sources_list}\n\n"
+            f"#### 🔍 PHYSICAL BIGQUERY UPSTREAM SCHEMAS (Wave 1 Live Inspection):\n"
+            f"{schema_section}\n\n"
+            f"#### ⚠️ SCHEMA DRIFT & COLUMN GUARDS:\n"
+            f"{drift_section}\n\n"
             f"#### IMMUTABLE INSTRUCTIONS:\n"
             f"1. You MUST translate ONLY the `SELECT` query body and business transformations.\n"
             f"2. You MUST NOT modify or generate the `config {{}}` block, dataset names, or project IDs.\n"
             f"3. Prohibited: `SELECT *`, placeholders (`1=1`, `TODO`), or hardcoded GCP 3-part paths.\n"
-            f"4. All source tables MUST be referenced strictly using `${{ref('schema', 'table')}}` with 2 arguments.\n\n"
+            f"4. All source tables MUST be referenced strictly using `${{ref('schema', 'table')}}` with 2 arguments.\n"
+            f"5. If an upstream table has `require_partition_filter: True`, you MUST include a partition pruning filter on `{ctx.get('partition_by') or 'the partition column'}`.\n\n"
             f"#### LEGACY CODE TO TRANSLATE:\n"
             f"```sql\n"
             f"{legacy_code[:4000]}\n"

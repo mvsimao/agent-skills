@@ -57,6 +57,7 @@ flowchart TD
 
 ### Layer 1: Data Warehouse Live + SA Impersonation + Coordinate Verification
 - **Physical BigQuery Inspection:** Queries BigQuery API inspecting table existence, `num_rows`, and partition modification timestamps with automated *Service Account Impersonation* fallback.
+- **Live Physical BigQuery Metadata Inspection (Wave 1):** In addition to `num_rows` and `last_modified`, directly extracts from the BigQuery API (`tables.get`) the real physical schema (`live_bq_schema`: column name, data type, and mode), real partitioning column and type (`live_partition_field`, `live_partition_type`), the `require_partition_filter` flag, and clustering keys (`clustering_fields`). Exposes this live physical metadata to safeguard `.sqlx` generation and refinement against outdated static schemas and dictionary drift.
 - **Surgical `.sqlx` Coordinate Alert:** If the physical table exists at the architected coordinate but `01_sources/*.sqlx` points to a divergent project/dataset, approves the card while generating a surgical alert to adjust coordinates in `.sqlx`.
 - **Empty Table Guard (`UNPOPULATED_UPSTREAM`):** If the table exists in BigQuery but contains `0 rows` (empty shell) and the producing predecessor card is not yet completed (`Pre-Wave` or `Refining`), halts progression to prevent downstream logic execution against unpopulated schemas.
 

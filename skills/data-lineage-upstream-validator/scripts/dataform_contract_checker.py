@@ -29,13 +29,19 @@ class UpstreamValidationStatus:
     project_id: str
     dataset_id: str
     table_id: str
-    status: str  # LIVE_VERIFIED, DATAFORM_VALIDATED, UNSTARTED_PREDECESSOR, MISSING_UNRESOLVED
+    status: str  # LIVE_VERIFIED, DATAFORM_VALIDATED, UNSTARTED_PREDECESSOR, MISSING_UNRESOLVED, UNPOPULATED_UPSTREAM
     layer_found: str  # DWH_LIVE, DATAFORM_REPO, SIBLING_REPO, NONE
     num_rows: Optional[int] = None
     last_modified: Optional[str] = None
     contract_file: Optional[str] = None
     impersonation_used: bool = False
     details: str = ""
+    # Wave 1: Physical BigQuery Metadata Inspection
+    live_bq_schema: Optional[List[Dict[str, str]]] = None
+    live_partition_field: Optional[str] = None
+    live_partition_type: Optional[str] = None
+    require_partition_filter: Optional[bool] = None
+    clustering_fields: Optional[List[str]] = None
 
 
 class DataformContractChecker:
@@ -147,7 +153,17 @@ class DataformContractChecker:
                     layer_found="DWH_LIVE",
                     num_rows=1450200,
                     last_modified="2026-10-27T23:15:00Z",
-                    details=f"Physical table `{full_table}` verified live with 1,450,200 rows."
+                    details=f"Physical table `{full_table}` verified live with 1,450,200 rows.",
+                    live_bq_schema=[
+                        {"name": "id", "type": "STRING", "mode": "REQUIRED"},
+                        {"name": "customer_id", "type": "STRING", "mode": "NULLABLE"},
+                        {"name": "created_at", "type": "TIMESTAMP", "mode": "NULLABLE"},
+                        {"name": "updated_at", "type": "TIMESTAMP", "mode": "NULLABLE"}
+                    ],
+                    live_partition_field="created_at",
+                    live_partition_type="DAY",
+                    require_partition_filter=False,
+                    clustering_fields=["customer_id"]
                 )
             return None
 
@@ -163,6 +179,22 @@ class DataformContractChecker:
                 num_rows = int(data.get("numRows", 0))
                 last_mod = data.get("lastModifiedTime")
 
+                fields_raw = data.get("schema", {}).get("fields", [])
+                live_bq_schema = [
+                    {"name": f.get("name"), "type": f.get("type"), "mode": f.get("mode", "NULLABLE")}
+                    for f in fields_raw
+                ]
+                time_part = data.get("timePartitioning", {})
+                range_part = data.get("rangePartitioning", {})
+                live_part_field = time_part.get("field") or range_part.get("field")
+                live_part_type = time_part.get("type", "DAY") if time_part else ("RANGE" if range_part else None)
+                req_part_filter = bool(
+                    time_part.get("requirePartitionFilter", False) or
+                    data.get("requirePartitionFilter", False)
+                )
+                clustering = data.get("clustering", {})
+                clustering_fields = clustering.get("fields", []) if clustering else []
+
                 # 0-Rows Lock Rule
                 is_unstarted = (producer_card_status or "").lower() in unstarted_statuses
                 if num_rows == 0 and is_unstarted:
@@ -175,7 +207,12 @@ class DataformContractChecker:
                         num_rows=0,
                         last_modified=last_mod,
                         impersonation_used=bool(impersonate_sa),
-                        details=f"CRITICAL LOCK: Physical table `{full_table}` has 0 rows and producer card is unstarted ('{producer_card_status}'). Dependency blocker UNPOPULATED_UPSTREAM."
+                        details=f"CRITICAL LOCK: Physical table `{full_table}` has 0 rows and producer card is unstarted ('{producer_card_status}'). Dependency blocker UNPOPULATED_UPSTREAM.",
+                        live_bq_schema=live_bq_schema,
+                        live_partition_field=live_part_field,
+                        live_partition_type=live_part_type,
+                        require_partition_filter=req_part_filter,
+                        clustering_fields=clustering_fields
                     )
 
                 return UpstreamValidationStatus(
@@ -187,7 +224,12 @@ class DataformContractChecker:
                     num_rows=num_rows,
                     last_modified=last_mod,
                     impersonation_used=bool(impersonate_sa),
-                    details=f"Table `{full_table}` is live with {num_rows:,} rows."
+                    details=f"Table `{full_table}` is live with {num_rows:,} rows.",
+                    live_bq_schema=live_bq_schema,
+                    live_partition_field=live_part_field,
+                    live_partition_type=live_part_type,
+                    require_partition_filter=req_part_filter,
+                    clustering_fields=clustering_fields
                 )
         except Exception as e:
             logger.debug(f"Live DW check error for {full_table}: {e}")

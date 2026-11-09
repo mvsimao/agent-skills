@@ -46,7 +46,7 @@ The metrics below were audited in production during the continuous migration of 
 │ Speedup Factor           │ Baseline (1x)               │ 95x to 280x faster (-99.6%)   │
 │ Token Consumption        │ ~2,800,000 tokens / 14 cards│ 0 tokens (det.) / ~48k (total)│
 │ Direct Token Savings     │ 0%                          │ 98.3% to 100% reduction       │
-│ Quality Gate Pass Rate   │ 71.4% (frequent rework)     │ 100.0% (BL_00-BL_15 + 37 Rules)│
+│ Quality Gate Pass Rate   │ 71.4% (frequent rework)     │ 100.0% (BL_00-BL_19 + 37 Rules)│
 │ Cloud Blocker Precision  │ Frequent 403 False Blockers │ 0 False Positives / 0 Negatives│
 │ Scalability Limit        │ ~1-2 concurrent cards       │ +2,400 Work Items via DAG     │
 └──────────────────────────┴─────────────────────────────┴───────────────────────────────┘
@@ -54,13 +54,13 @@ The metrics below were audited in production during the continuous migration of 
 
 ### Audited Benchmark Highlights:
 - **99.6% Reduction in Cycle Time (95x to 280x Speedup):** Technical refinement + preflight audit time plummeted from **~52.9 min/card** (12h 20min for 14 cards in the legacy 10-skill multi-LLM setup) down to **~11.3s/card** in the deterministic pass with active session caching (`fcntl.flock`, TTL 15–30 min), or **~30s to 90s/card** when including full from-scratch surgical SQL query translation by the LLM in controlled micro-batches of <=4 cards.
-- **98% to 100% LLM Token Savings:** Token consumption dropped from **~2.8 million tokens** (for a 14-card batch in the legacy workflow) to **0 tokens** across deterministic discovery, 6-pillar cloud governance, 6-layer multi-hop lineage, multi-target scaffolding, structural auto-healing, BL_00–BL_15 semantic validation, and PBI assembly. The LLM is triggered exclusively for surgical query translation (~3k–5k tokens/card) and structured impediment diagnosis via `gemini-2.5-flash`.
+- **98% to 100% LLM Token Savings:** Token consumption dropped from **~2.8 million tokens** (for a 14-card batch in the legacy workflow) to **0 tokens** across deterministic discovery, 6-pillar cloud governance, 6-layer multi-hop lineage, multi-target scaffolding, structural auto-healing, BL_00–BL_19 semantic validation, and PBI assembly. The LLM is triggered exclusively for surgical query translation (~3k–5k tokens/card) and structured impediment diagnosis via `gemini-2.5-flash` (or autonomous self-healing via `gemini-3.8-flash`).
 
 ---
 
 ## 🛡️ 2. Architectural Quality, Semantic Equivalence & Zero-Rework Guardrails
 
-- **100% Quality Gate Pass Rate (37 Architectural Rules + BL_00–BL_15 Semantic Validator + Suites S1–S6 + Real Compilation):**
+- **100% Quality Gate Pass Rate (37 Architectural Rules + BL_00–BL_19 Semantic Validator + Suites S1–S6 + Real Compilation):**
   Quality clearance evolved from **71.4%** (legacy prompt chain with constant human rework) to **100.0% First-Time-Right**:
   * **Automated Legacy Artifact Purge (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):** Automatically removes and blocks manual backfill scripts (`05_data_migration/backfill_*.sqlx`), orphan DDLs (`00_ddl/create_*.sqlx`), and nested duplicate subdirectories inside the Dataform repository.
   * **Pre-Audit Structural Auto-Healing (`_auto_heal_sqlx_before_audit`):** Uses a deterministic balanced-brace parser to automatically heal common syntax deviations before audit (strips comments preceding `config {}`, merges duplicate blocks, converts hardcoded `database:` strings to `utils.projectId()`, restores coordinates against `context_locked.json`, expands single-argument `${ref()}` to 2 arguments, fixes invalid `GROUP BY ... AS` clauses, and cleans redundant aliases).
@@ -69,18 +69,19 @@ The metrics below were audited in production during the continuous migration of 
   * **Explicit Timezone Conversion & Safe Array/JSON Serialization:** Mandates translation of legacy Spark timezone functions using `DATETIME(..., '<Timezone_Local>')` and guards empty array representations (`['[]']`) before `TO_JSON_STRING(...)` calls.
   * **Semantic Equivalence for Incremental Loads:** Validates upsert semantics (`type: "incremental"` + `uniqueKey`), insert-new-only (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`), and delete-from-target (`DELETE FROM ${self()}` in pre/post_operations).
   * **Bidirectional Schema and Type Parity:** Prioritizes introspection via the Dataform CLI (`dataform compile --json`), backward-compatible contract views (`06_legacy_contracts`), and canonical Airflow DAG Factory templates with cross-project protection (`utils.projectId` + `vars.project_id`).
+  * **Enterprise Wave Refinements (Live Physical Metadata, AST Auto-Discovery, Live Dry-Run & 5/5 Confidence Scorecard):** Includes live inspection of physical upstream schemas in BigQuery (with automatic overlay of outdated partitions and column drift alerts), AST x Catalog reconciliation with auto-discovery in BigQuery to capture uncataloged auxiliary joins, BigQuery Live Dry-Run (`dryRun: True`) with a smart virtual wrapper for unmaterialized incremental models (`${self()}`), an optional Self-Healing loop powered by `gemini-3.8-flash` guided by compilation and dry-run errors, and a 5/5 Confidence Scorecard with a strict human review governance lock in `Refining`.
 
-### Business Logic & Semantic Parity Matrix: BL_00 to BL_15 (`business_logic_validator.py`):
+### Business Logic & Semantic Parity Matrix: BL_00 to BL_19 (`business_logic_validator.py`):
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                        BUSINESS LOGIC & SEMANTIC PARITY MATRIX (BL_00–BL_15)           │
+│                        BUSINESS LOGIC & SEMANTIC PARITY MATRIX (BL_00–BL_19)           │
 ├───────┬──────────────────────────────────────────┬─────────────────────────────────────┤
 │ Rule  │ Semantic Validator Name                  │ Equivalence Guarantee               │
 ├───────┼──────────────────────────────────────────┼─────────────────────────────────────┤
 │ BL_00 │ BL_0_MISSING_TARGET_SQLX                 │ 100% of multi-target destinations   │
 │       │                                          │ covered by a corresponding .sqlx    │
-│ BL_01 │ BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE     │ Prevents accidental downgrade of    │
-│       │                                          │ incremental loads to type: "table"  │
+│ BL_01 │ BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE &   │ Prevents downgrade to type 'table'  │
+│       │ BL_01_ROLLING_WINDOW_TABLE_WIPES_HISTORY │ & rolling daily window wipes        │
 │ BL_02 │ BL_02_UPSERT_INCREMENTAL_FRAMEWORK       │ Validates type: "incremental" with  │
 │       │                                          │ mandatory unique primary key        │
 │ BL_03 │ BL_03_INSERT_NEW_ONLY_FRAMEWORK          │ Validates insert-new self-check:    │
@@ -100,6 +101,11 @@ The metrics below were audited in production during the continuous migration of 
 │ BL_13 │ LEGACY_CONTRACT_PROJECTION               │ Aliases snake_col AS LegacyCol      │
 │ BL_14 │ BIDIRECTIONAL_SCHEMA_TYPE_PARITY         │ Parity of Spark Schema vs BigQuery  │
 │ BL_15 │ CROSS_SHEET_UNIFIED_JOIN                 │ Unified joins across multiple sheets│
+│ BL_16 │ DUPLICATE_UPSTREAM_UNION_ALL             │ Blocks accidental UNION homonyms    │
+│ BL_17 │ UNPRUNED_MASSIVE_TABLE_SCAN &            │ Blocks 5B+ table unpruned scans &   │
+│       │ RAID_D37_EVENTTRACKS_WHITESPACE_NORM     │ whitespace norm before JSON parse   │
+│ BL_18 │ GROUP_BY_PARSED_ALIAS_SHADOWING          │ Spark vs BigQuery GROUP BY shadowing│
+│ BL_19 │ MULTI_CSV_EXPORT_FILENAME_MISMATCH       │ Target naming parity for multi-CSV  │
 └───────┴──────────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
@@ -155,15 +161,17 @@ flowchart TD
         PAUSE --> LLM["Surgical LLM: SELECT Body ONLY (~3k-5k tokens)"]
     end
 
-    subgraph GATE["5. Fail-Closed Gate, BL_00–BL_15 & Unit Test Report (0 Tokens)"]
+    subgraph GATE["5. Fail-Closed Gate, BL_00–BL_19, BigQuery Live Dry-Run & 5/5 Scorecard (0 Tokens)"]
         LLM & DETECT -->|No / Ready| PURGE["_purge_forbidden_legacy_dataform_files\n(Backfills & DDLs Purge)"]
         PURGE --> HEAL["_auto_heal_sqlx_before_audit (Balanced-Brace Parser)"]
         HEAL --> GT["stage3_validate_refinement_gate.py"]
-        GT --> BL["business_logic_validator.py (BL_00 to BL_15)"]
+        GT --> BL["business_logic_validator.py (BL_00 to BL_19)"]
+        GT --> DR["BigQuery Live Dry-Run (dryRun: True)\nwith Smart Virtual Target Wrapper"]
         GT --> V1["test_architect_consistency.py (37 Rules)"]
         GT --> V2["test_pbi_consistency.py (Suites S1–S6)"]
         GT --> V3["contract_test.py (4x4 Parity & Real dataform compile)"]
-        BL & V1 & V2 & V3 -->|All Passed| UTR[("unit_test_report_*.md (Audited Report)")]
+        BL & DR & V1 & V2 & V3 -->|All Passed| SC["5/5 Ready Confidence Scorecard\n(Strict Governance Lock in Refining)"]
+        SC --> UTR[("unit_test_report_*.md & *_ready_confidence_report.json")]
         UTR --> PUB["stage4_build_and_publish_pbi.py"]
         PUB --> ADO["Bidirectional Linker: Predecessor/Successor + Tag 'Refined'"]
         PUB --> TLM[("telemetry_run.jsonl with flock & os.replace")]
@@ -185,8 +193,8 @@ flowchart LR
         PERSIST --> BATCH["Active Window: Cards [1..4]"]
         BATCH --> P1["--phase pre-llm\nStage 1 & Stage 2 Scaffolding"]
         P1 --> CHECK{"SQL translation required?"}
-        CHECK -->|Yes| EXIT10["🛑 Exit Code 10: Pause & Prompt\nWait for Surgical LLM Translation"]
-        CHECK -->|No| P2["--phase post-llm\nPurge + Auto-Heal + BL_00–BL_15 + Gate 3"]
+        CHECK -->|Yes| EXIT10["🛑 Exit Code 10: Pause & Prompt\nWait for Surgical LLM Translation\n(or --auto-llm with gemini-3.8-flash)"]
+        CHECK -->|No| P2["--phase post-llm\nPurge + Auto-Heal + BL_00–BL_19 + Live Dry-Run + Gate 3"]
         EXIT10 --> LLM_DONE["LLM translates SELECT body"]
         LLM_DONE --> P2
         P2 --> UPSTREAM{"--upstream-checker?"}
@@ -208,7 +216,7 @@ flowchart LR
 
 ---
 
-### 3. Semantic Validator BL_00–BL_15 & Quality Gate Engine
+### 3. Semantic Validator BL_00–BL_19 & Quality Gate Engine
 
 ```mermaid
 flowchart TD
@@ -219,20 +227,23 @@ flowchart TD
         PURGE --> HEAL["_auto_heal_sqlx_before_audit\nBalanced parser: config, utils.projectId, 2-arg ref, GROUP BY"]
     end
 
-    subgraph STAGE_3B["Semantic Equivalence Engine (BL_00 to BL_15)"]
+    subgraph STAGE_3B["Semantic Equivalence Engine (BL_00 to BL_19)"]
         HEAL --> BL_ENG["business_logic_validator.py"]
         BL_ENG --> BL1["BL_00: 100% Multi-Target Scaffolding Coverage"]
-        BL_ENG --> BL2["BL_01-BL_04: Incremental Load Equivalence (upsert/insert-only/delete)"]
+        BL_ENG --> BL2["BL_01-BL_04: Incremental Load Equivalence (upsert/insert-only/delete/rolling-wipe)"]
         BL_ENG --> BL3["BL_05-BL_07: Partition Pruning D-1 Margin, Timezone & Array JSON"]
         BL_ENG --> BL4["BL_08-BL_13: Anti-Boilerplate, Contracts & Legacy Views"]
         BL_ENG --> BL5["BL_14-BL_15: CLI Introspection, Bidirectional & Cross-Sheet Joins"]
+        BL_ENG --> BL6["BL_16-BL_19: Accidental Homonym Union, 5B+ Table Scan, Spark Alias & Multi-CSV"]
     end
 
     subgraph STAGE_3C["Compilation & 4x4 Parity"]
         BL_ENG --> ARCH["test_architect_consistency.py (37 Rules)"]
         ARCH --> DF["dataform compile --json real ([DATAFORM_COMPILE_ERROR])"]
-        DF --> P4X4["contract_test.py (4x4 Parity: SSOT x Spec x Code x PBI)"]
+        DF --> DR["BigQuery Live Dry-Run (dryRun: True)\nwith Smart Virtual Wrapper"]
+        DR --> P4X4["contract_test.py (4x4 Parity: SSOT x Spec x Code x PBI)"]
         P4X4 --> S_SUITES["test_pbi_consistency.py (Suites S1–S6)"]
+        S_SUITES --> SC["5/5 Ready Confidence Scorecard\n(Strict Governance Lock in Refining)"]
     end
 
     S_SUITES -->|100% Passed| REPORT[("unit_test_report_*.md")]
@@ -279,13 +290,13 @@ flowchart TD
         SCAN1 --> PF{"cloud-preflight-infra-auditor (6 Pillars)"}
         PF -->|Blocked| TAG_IMP["Tag 'Infra-Blocked' & Move to Impediments via WEF"]
         PF -->|Cleared| REF["migration-spec-refiner (Micro-Batches <=4 Cards)"]
-        REF --> HEAL_GATE["Purge + Auto-Healing + BL_00–BL_15 + 37 Rules + dataform compile"]
+        REF --> HEAL_GATE["Purge + Auto-Healing + BL_00–BL_19 + Dry-Run + 37 Rules + dataform compile"]
         HEAL_GATE --> PUB_GCS["Publish to gs://<artifacts-bucket>/cards/<id>/v1"]
         PUB_GCS --> OPT_PR{"Flag --open-pr active?"}
         OPT_PR -->|Yes| OPEN_PR["Create Clean Branch from main & Open PR"]
         OPT_PR -->|No| LIN_CHECK{"data-lineage-upstream-validator"}
         OPEN_PR --> LIN_CHECK
-        LIN_CHECK -->|Approved| PROMOTE["Promote to 'Ready' (Zero-PR Required)"]
+        LIN_CHECK -->|Approved| PROMOTE["Keep in 'Refining' (tag 'Refined') for Human Review"]
     end
 
     subgraph UNBLOCK_LOOP["Autonomous Impediment Resolution"]
@@ -322,7 +333,7 @@ Using `tools/critical_path_and_wave_analyzer.py` combined with the 6-layer rever
 | :--- | :--- | :--- |
 | **`cloud-preflight-infra-auditor`** | `skills/cloud-preflight-infra-auditor/` | 6-Pillar cloud & IaC readiness audit, alias normalization, strict non-prod protection, SA Impersonation cascade, live BigQuery smoke query (`SELECT 1`), cross-project IAM ACLs, AI/LLM Gateway remote functions, Secret Manager archetype governance, GCS tiering, Google Sheets live probes, Git repo verification, and copyable Terraform generation. |
 | **`data-lineage-upstream-validator`** | `skills/data-lineage-upstream-validator/` | 6-Layer reverse lineage resolver, Ghost Views mapping, Non-AS-IS architectural consolidation, DW Live coordinate checks with SA Impersonation, 0-rows empty table lock, Dataform draft workspace guardrail (`is_draft_workspace`), sibling project scanner, and detection of 4 backlog governance anomalies. |
-| **`migration-spec-refiner`** | `skills/migration-spec-refiner/` | .py-First technical refinement orchestrator with chained micro-batches (<=4 cards), translation pause (`Exit Code 10`), `%run` library extraction, Partition Pruning enforcement, multi-target scaffolding, forbidden files purge, pre-audit structural auto-healing, **BL_00–BL_15 business logic validator**, 37 architectural rules gate, real Dataform compile, and PBI publishing with suites S1–S6. |
+| **`migration-spec-refiner`** | `skills/migration-spec-refiner/` | .py-First technical refinement orchestrator with chained micro-batches (<=4 cards), translation pause (`Exit Code 10`), `%run` library extraction, Partition Pruning enforcement, multi-target scaffolding, forbidden files purge, pre-audit structural auto-healing, **BL_00–BL_19 business logic validator**, BigQuery Live Dry-Run (`dryRun: True`) with Smart Virtual Target Wrapper, AST x Catalog reconciliation, 5/5 Confidence Scorecard, closed-loop self-healing via `gemini-3.8-flash`, 37 architectural rules gate, real Dataform compile, and PBI publishing with suites S1–S6. |
 | **`hybrid-impediment-investigator`** | `skills/hybrid-impediment-investigator/` | Deep two-stage impediment diagnosis: Stage 1 structured semantic extraction via Vertex AI Gemini 2.5 Flash (`responseSchema: application/json`, taxonomy `IMP_C01`–`IMP_C40`), and Stage 2 deterministic Python probes (`ADO_PREDECESSOR_STATUS`, `BQ_DATASET_EXISTS`, `BQ_TABLE_POPULATED`, `SECRET_MANAGER_EXISTS`, `GITHUB_PR_MERGED`, `HUMAN_APPROVAL`). |
 
 ### Complementary CLI Tools (`tools/`)
@@ -333,7 +344,7 @@ Using `tools/critical_path_and_wave_analyzer.py` combined with the 6-layer rever
 | **Tool 2** | `tools/dataform_cross_project_guard.py` | Cross-project boundary auditor (`-a-` vs `-p-`/`-i-`), forbidden files purge (`05_data_migration`, `00_ddl`), `utils.projectId(...)` injection, 2-arg ref enforcement, DAG YAML `vars.project_id`, assertion dependencies, `snake_case` / `GROUP BY` healing, Dataform CLI compile parity, and PR scope isolation. Formats: Markdown, JSON, Excel, PPTX. |
 | **Tool 3** | `tools/board_workflow_governor.py` | Safe Kanban state transitions resolving dynamic WEF board extension fields (`System.BoardColumn`, `WEF_*_Kanban.Column.Done`), movement governance lock, atomic tag management (`Refined`, `Infra-Blocked`), batch bidirectional links, in-place `PATCH` comment updates, and synthesis of SRE infrastructure orders grouped by resource type. Formats: Markdown, JSON, Excel, PPTX. |
 | **Tool 4** | `tools/executive_telemetry_exporter.py` | FinOps benchmark consolidator (Speedup 95x–280x, 0 tokens deterministic, 100% Quality Gate pass) generating **PowerPoint Widescreen 16:9 (`.pptx`)** dark-theme presentations and Excel spreadsheets (`.xlsx`). |
-| **Tool 5** | `tools/autonomous_refinement_worker.py` | Continuous refinement worker for Airflow DAGs and Cloud Run Jobs with `USE_SECRET_CREDENTIALS` authentication lock: monitors Refinement & IMP columns, runs preflight, scaffolds with auto-healing and BL_00–BL_15 gates, publishes to `gs://`, optionally opens PR (`--open-pr`), and unblocks via Hybrid Investigator. |
+| **Tool 5** | `tools/autonomous_refinement_worker.py` | Continuous refinement worker for Airflow DAGs and Cloud Run Jobs with `USE_SECRET_CREDENTIALS` authentication lock: monitors Refinement & IMP columns, runs preflight, scaffolds with auto-healing, BL_00–BL_19 gates, BigQuery Live Dry-Run & Gemini self-healing, publishes to `gs://`, optionally opens PR (`--open-pr`), emits 5/5 Confidence Scorecard keeping newly refined cards in `Refining` (tag `Refined`) for human sign-off, and unblocks resolved cards via Hybrid Investigator. |
 
 ---
 

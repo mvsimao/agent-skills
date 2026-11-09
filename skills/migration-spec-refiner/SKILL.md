@@ -60,24 +60,26 @@ flowchart TD
 ## 🏛️ The 4 Deterministic Stages & Queue Architecture
 
 ### Persistent Chained Batch Queue Engine (`refine_card_orchestrator.py`)
-- **Two-Phase Execution Modes:** Supports `--phase pre-llm` (Stages 1 and 2 up to surgical pause) and `--phase post-llm` (Purge, Auto-healing, Gate 3, BL_00–BL_15, Compilation, and Publishing).
+- **Two-Phase Execution Modes:** Supports `--phase pre-llm` (Stages 1 and 2 up to surgical pause) and `--phase post-llm` (Purge, Auto-healing, Gate 3, BL_00–BL_19, Dry-Run, Compilation, and Publishing).
 - **High-Throughput Enqueueing:** CLI commands `--enqueue <ids...>`, `--next`, `--queue-status`, `--clear-queue` with configurable concurrency windows (`--max-active 1` to `4`).
-- **Anti-Skip Translation Lock (`Exit Code 10 - AWAITING_SURGICAL_LLM`):** Prevents progressing new cards while any active card awaits surgical SQL translation from the LLM, ensuring zero boilerplate or placeholder leaks in production.
+- **Closed Self-Healing Loop via Vertex AI Gemini (`--auto-llm` / `--self-heal-llm` — Wave 3):** When enabled, instead of pausing on Exit Code 10, invokes `gemini-3.8-flash` on Vertex AI (global endpoint, `temperature=0.1`) in a closed loop of up to 3 retries, injecting compiler tracebacks, live BigQuery dry-run diagnostics, and BL_00–BL_19 violation traces for surgical self-healing, while deterministically reapplying the SSOT coordinate lock after each generation.
+- **Anti-Skip Translation Lock (`Exit Code 10 - AWAITING_SURGICAL_LLM`):** Prevents progressing new cards while any active card awaits surgical SQL translation from the LLM when `--auto-llm` is not passed, ensuring zero boilerplate or placeholder leaks in production.
 - **Session Cache Auto-Reset:** Automatically resets temporary caches upon initializing a new queue (`--enqueue`/`--clear-queue`), maintaining a **Secure Session Cache (`fcntl.flock`, TTL 15–30 min for positive `READY` outcomes)** between pipeline phases.
 - **Continuous Integration Pipeline:** Integrated flags `--upstream-checker` (triggers lineage audit immediately following Stage 4) and `--open-pr` (branches cleanly from `origin/main`, stages strictly batch artifacts, validates Gate 3, and opens/updates the Pull Request).
 
 ---
 
-### Stage 1: Live `origin/main` SSOT Lock, `%run` Libraries & Pre-Flight (`resolve_refinement_context.py`)
+### Stage 1: Live `origin/main` SSOT Lock, Upstream BQ Inspection & AST Reconciliation (`resolve_refinement_context.py`)
 - **Authoritative `origin/main` Synchronization:** Runs `git fetch origin main` and loads canonical catalogs directly from the default branch, resolving regional repositories (`sam`, `nam`, `eur`), non-production redirect safeguards (`hmg` ➔ `dev`), universal view canonization (`vw*`), and anti-self-dependency guards.
-- **Full Source Ingestion & `%run` Inlining:** Loads the entire legacy source script (`legacy_code_full`) and recursively extracts child libraries imported via `%run` or Python imports (`imported_libraries_code`).
-- **Metadata Extraction:** Extracts `schedule_cron`, partition keys (`partition_field` / `bq_partition_field`), and the **destination column dictionary (`legacy_columns`)** via catalog or AST source parsing.
+- **Live Physical BigQuery Metadata & Column Drift Detection (Wave 1):** In addition to static definitions, live-inspects upstream BigQuery physical schemas (`live_bq_schema`), overlays outdated static partitioning by physical attributes (`live_partition_field`, `live_partition_type`, `require_partition_filter`, `clustering_fields`), and automatically computes column drift (`schema_drift_missing_in_bq`) between legacy dictionary references and physical GCP tables.
+- **AST x Catalog Reconciliation & BigQuery Auto-Discovery (Wave 2):** Scans the AST/regex of legacy code and `%run` libraries to detect uncataloged auxiliary join tables (`ast_reconciliation`), auto-discovering their live GCP physical coordinates across candidate projects and injecting them into `ctx["canonical_sources"]` (or flagging `unmapped_blocking` if missing).
+- **Multi-CSV Destination Derivation (`BL_19`):** When legacy scripts export multiple CSV files collapsed under one catalog entry, derives BigQuery target table names from actual CSV file stems with reverse mapping to canonical Dataform tables.
 - **Discarded Targets & Egress Filter (Rule D-32):** Filters out targets marked `discarded_by` and non-table egress destinations (`EMAIL`, `SFTP`, `WEBHOOK`, `DATA_APPLICATION_API`).
 - **Immutable Contract:** Persists `context_locked.json` recording the verified state prior to any scaffolding.
 
 ---
 
-### Stage 2: Multi-Target Scaffolding, Canonical DAG YAML & Surgical Prompt (`scaffold_dataform_and_review.py`)
+### Stage 2: Multi-Target Scaffolding, Canonical DAG YAML & Physical Schema Prompt (`scaffold_dataform_and_review.py`)
 Deterministically scaffolds the complete suite of artifacts for **all card destinations (`ctx["targets"]` - native Multi-Target support)**:
 1. `definitions/01_sources/*.sqlx`: Reuses existing definitions from `main` without duplication; injects `database: utils.projectId("<acronym>")` on cross-project sources (`p-*` / `i-*` read by `a-*`).
 2. `definitions/03_silver/<domain>/<table>.sqlx` (or `04_gold`):
@@ -90,27 +92,19 @@ Deterministically scaffolds the complete suite of artifacts for **all card desti
    - Backward-compatible contract view with reverse projection (`snake_col AS LegacyCol`).
 5. `dags/<region>/<dag_id>.yaml`:
    - Canonical **Airflow DAG Factory** YAML with `"vars": {"project_id": "<canonical_source_project>"}` in cross-project setups.
-- **Mandatory Surgical Pause & Partition Pruning Rules:** If any generated file contains `[PENDING_LLM_TRANSLATION]` or `SELECT *`, emits `*_surgical_llm_prompt.md` containing strict **Partition Pruning guidelines** (mandating direct column predicates without wrapping functions like `SAFE_CAST()` or `DATE()`, and enforcing a **D - 1** margin between UTC physical partitions and local business filters) and pauses execution with **`Exit Code 10`**.
+- **Injection of Physical BigQuery Upstream Metadata (Wave 1):** Injects physical upstream column lists, `require_partition_filter` requirements, and column drift warnings into `*_surgical_llm_prompt.md`, eliminating `Unrecognized name` errors on first compilation.
+- **Mandatory Surgical Pause & Partition Pruning Rules:** If any generated file contains `[PENDING_LLM_TRANSLATION]` or `SELECT *`, emits `*_surgical_llm_prompt.md` and pauses execution with **`Exit Code 10`** unless `--auto-llm` is enabled.
 
 ---
 
-### Stage 3: Forbidden Artifact Purge + Pre-Audit Auto-Healing + Semantic Validator BL_00–BL_15 + 37 Rules Gate + Real Compilation (`validate_refinement_gate.py`)
+### Stage 3: Forbidden Artifact Purge + Pre-Audit Auto-Healing + BL_00–BL_19 Gate + BigQuery Live Dry-Run + 5/5 Confidence Scorecard (`validate_refinement_gate.py`)
 - **Automated Legacy Artifact Purge (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):**
   Removes and blocks manual backfill scripts (`05_data_migration/backfill_*.sqlx`), standalone DDLs (`00_ddl/create_*.sqlx`), and nested duplicate subdirectories.
 - **Pre-Audit Structural Auto-Healing (`_auto_heal_sqlx_before_audit`):**
-  Deterministic balanced-brace parser curing syntax deviations prior to audit:
-  * Strips comments and stray characters before `config {}`;
-  * Merges duplicate `config {}` blocks;
-  * Converts hardcoded `database:` strings to `utils.projectId(...)`;
-  * Restores divergent `schema:` and `name:` attributes against `context_locked.json`;
-  * Injects missing tags and `partitionBy` clauses;
-  * Expands single-arg `${ref("table")}` to 2-arg `${ref("schema", "table")}`;
-  * Fixes invalid `GROUP BY ... AS col` clauses;
-  * Removes redundant aliases (`col AS col`) in contract views;
-  * Auto-heals array JSON serialization to safely guard empty elements (`['[]']`).
-- **Business Logic & Semantic Parity Validator (`validators/business_logic_validator.py` — Rules BL_00 to BL_15):**
+  Deterministic balanced-brace parser curing syntax deviations prior to audit.
+- **Business Logic & Semantic Parity Validator (`validators/business_logic_validator.py` — Rules BL_00 to BL_19):**
   * `BL_00_MISSING_TARGET_SQLX`: Guarantees 100% of targets from multi-target cards possess `.sqlx` definitions;
-  * `BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE`: Blocks accidental downgrade of incremental models to `type: "table"`;
+  * `BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE` & `BL_01_ROLLING_WINDOW_TABLE_WIPES_HISTORY`: Blocks accidental downgrade of incremental models to `type: "table"` and blocks rolling window table wipes on historical pipelines;
   * `BL_02_UPSERT_INCREMENTAL_FRAMEWORK`: Validates upsert semantics (`type: "incremental"` + `uniqueKey`);
   * `BL_03_INSERT_NEW_ONLY_FRAMEWORK`: Validates insert-new-only logic (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`);
   * `BL_04_DELETE_FROM_TARGET_FRAMEWORK`: Validates delete-from-target (`DELETE FROM ${self()}` in `pre_operations`);
@@ -124,19 +118,22 @@ Deterministically scaffolds the complete suite of artifacts for **all card desti
   * `BL_12_PARITY_4X4_GUARD`: Asserts 4x4 parity across SSOT Catalog, Spec JSON, Code, and PBI Documentation;
   * `BL_13_LEGACY_CONTRACT_PROJECTION`: Validates backward-compatible projection (`snake_col AS LegacyCol`) in contract views;
   * `BL_14_BIDIRECTIONAL_SCHEMA_TYPE_PARITY`: Asserts bidirectional schema and type parity between legacy Spark and BigQuery;
-  * `BL_15_CROSS_SHEET_UNIFIED_JOIN`: Validates unified joins/unions in multi-sheet ingestion consolidation.
-- **Unit Test Report Generation:** Generates `unit_test_report_*.md` upon 100% pass across all validation suites.
+  * `BL_15_CROSS_SHEET_UNIFIED_JOIN`: Validates unified joins/unions in multi-sheet ingestion consolidation;
+  * `BL_16_DUPLICATE_UPSTREAM_UNION_ALL`: Blocks accidental UNION ALL/DISTINCT between homonymous upstream variants;
+  * `BL_17_UNPRUNED_MASSIVE_TABLE_SCAN` & `BL_17_RAID_D37_EVENTTRACKS_WHITESPACE_NORM`: Prevents unpruned scans on 5B+ row tables and enforces whitespace/newline normalization before JSON parsing on silver redirects;
+  * `BL_18_GROUP_BY_PARSED_ALIAS_SHADOWING`: Prevents Spark SQL vs BigQuery alias shadowing in `GROUP BY`;
+  * `BL_19_MULTI_CSV_EXPORT_FILENAME_MISMATCH`: Enforces destination naming parity for multi-CSV exports.
+- **BigQuery Live Dry-Run over Compiled Graph (`run_bigquery_live_dry_run` — Wave 1):** Submits compiled SQL with `dryRun: True` (0 bytes processed) using a **Smart Virtual Target Subquery Wrapper** to validate `${self()}` circular models, auditing `snake_case` output columns (`[DRY_RUN_OUTPUT_SNAKE_CASE_GUARD]`) and contract column parity (`[DRY_RUN_OUTPUT_COLUMNS_PARITY_GUARD]`).
+- **AST Unmapped Upstream Guard (`[AST_UNMAPPED_UPSTREAM_GUARD]` — Wave 2):** Fails the gate if uncataloged joins remain unmapped in BigQuery.
+- **5/5 Confidence Scorecard (`compute_ready_confidence_gate` — Wave 3):** Evaluates 5 criteria simultaneously: (1) Clean Dataform compilation, (2) 100% BigQuery Live Dry-Run pass, (3) Dry-run output parity and snake_case, (4) Zero BL_00–BL_19 or architectural violations, and (5) 100% AST upstreams reconciled.
 
 ---
 
-### Stage 4: Parity by Construction, Suites S1–S6 & Publishing (`build_and_publish_pbi.py`)
+### Stage 4: Parity by Construction, 5/5 Confidence Report & Governance Lock (`build_and_publish_pbi.py`)
 - **Parity by Construction:** Generates Section 1 (Target Identification) and Section 3.3 (Column Dictionary) from the **identical in-memory canonical list**, eliminating documentation drift.
 - **Suites S1 through S6 Validation:** Executes `validators/test_pbi_consistency.py`.
-- **Publication & Traceability:**
-  - Injects clickable links for 100% of generated artifacts in Section 4.1;
-  - Creates agile dependency links in the exact topological direction (`Predecessor` ➔ `Successor`);
-  - Applies tag `Refined` in agile board (`--publish-ado`);
-  - Records execution telemetry with atomic concurrency locks (`fcntl.flock` + `tempfile` + `os.replace`).
+- **Wave 3 Ready Confidence Report (`output/refinement_context/<CARD_ID>_ready_confidence_report.json`):** Persists diagnostic report and embeds 5/5 Scorecard into `unit_test_report_*.md`.
+- **Strict Board Governance Lock:** Even upon achieving 5/5 Confidence score, newly refined cards are kept in **`Refining`** with tag **`Refined`** for human review and final approval, strictly preventing unauthorized automatic promotion to `Ready`.
 
 ---
 
