@@ -36,7 +36,7 @@ curr_dir = Path(__file__).resolve().parent
 if str(curr_dir) not in sys.path:
     sys.path.insert(0, str(curr_dir))
 
-from office_export_helpers import create_minimal_xlsx
+from office_export_helpers import create_minimal_xlsx, create_corporate_pptx
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("critical-path-analyzer")
@@ -584,7 +584,7 @@ def main() -> None:
     parser.add_argument("--backlog", "-b", type=str, help="Path to backlog items JSON")
     parser.add_argument("--baseline", type=str, help="Path to baseline items JSON for comparison")
     parser.add_argument("--lineage-links", "-l", type=str, help="Path to extracted lineage links JSON")
-    parser.add_argument("--format", choices=["markdown", "json", "excel"], default="markdown", help="Output format")
+    parser.add_argument("--format", choices=["markdown", "json", "excel", "pptx"], default="markdown", help="Output format")
     parser.add_argument("--detailed", action="store_true", help="Generate full 8-sheet Excel report instead of concise 2-sheet executive view")
     parser.add_argument("--output", "-o", type=str, help="Output file path (.md, .json, or .xlsx)")
     parser.add_argument("--dry-run", action="store_true", help="Run with simulated enterprise dataset (+2,400 items)")
@@ -631,6 +631,27 @@ def main() -> None:
         else:
             analyzer.export_executive_2_sheet_xlsx(analysis, out_p)
             logger.info(f"Generated concise 2-sheet Executive Excel report: {out_p}")
+    elif args.format == "pptx" or (args.output and args.output.endswith(".pptx")):
+        out_p = args.output or "/tmp/critical_path_executive_report.pptx"
+        slides = [
+            {
+                "title": "Critical Path & Wave Analysis",
+                "subtitle": "Backlog Graph Traversal across 2,400+ Work Items",
+                "bullets": [
+                    f"Total Items Analyzed: {len(cards)}",
+                    f"Quick Wins Identified: {len(analysis.get('quick_wins', []))}",
+                    f"Topological Wave Inversions: {len(analysis.get('wave_inversions', []))}",
+                    f"Duplicate Cards Detected: {len(analysis.get('duplicates', []))}"
+                ]
+            },
+            {
+                "title": "8 Official Unblocking Lanes (Raias)",
+                "subtitle": "Parent Card Distribution",
+                "bullets": [f"{lane}: {len(items)} parent(s)" for lane, items in list(analysis.get("lanes", {}).items())[:5]]
+            }
+        ]
+        create_corporate_pptx(slides, out_p)
+        logger.info(f"Generated Executive PowerPoint report: {out_p}")
     elif args.format == "json" or (args.output and args.output.endswith(".json")):
         out_p = args.output or "/tmp/critical_path_report.json"
         Path(out_p).write_text(json.dumps(analysis, indent=2), encoding="utf-8")

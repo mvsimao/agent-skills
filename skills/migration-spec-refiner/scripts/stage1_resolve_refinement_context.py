@@ -199,7 +199,7 @@ class ContextLockResolver:
             "canonical_sources": declared_sources,
             "legacy_source_code": legacy_sql_or_code,
             "is_locked": True,
-            "lock_version": "2.0.0"
+            "lock_version": "2.1.0"
         }
 
         out_dir = Path(output_dir)

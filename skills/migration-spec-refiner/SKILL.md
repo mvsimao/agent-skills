@@ -92,7 +92,9 @@ Gera deterministicamente a suíte de artefatos para **todos os destinos do card 
 
 ---
 
-### Estágio 3: Auto-Healing Pré-Auditoria + Gate Fail-Closed (`validate_refinement_gate.py`)
+### Estágio 3: Expurgo de Artefatos Proibidos + Auto-Healing Pré-Auditoria + Validador Semântico BL_00–BL_15 + Gate Fail-Closed (37 Regras) + Compilação Real (`validate_refinement_gate.py`)
+- **Expurgo Automático de Artefatos Legados Proibidos (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):**
+  Remove e bloqueia scripts de backfill manual (`05_data_migration/backfill_*.sqlx`), DDLs avulsos (`00_ddl/create_*.sqlx`) e subdiretórios aninhados duplicados dentro do repositório Dataform.
 - **Auto-Healing Estrutural Pré-Auditoria (`_auto_heal_sqlx_before_audit`):**
   Parser determinístico de chaves balanceadas que corrige automaticamente antes da validação:
   * Remove comentários e caracteres espúrios antes do bloco `config {}`;
@@ -102,13 +104,26 @@ Gera deterministicamente a suíte de artefatos para **todos os destinos do card 
   * Injeta tags e `partitionBy` ausentes;
   * Expande chamadas `${ref("table")}` de 1 argumento para 2 argumentos `${ref("schema", "table")}`;
   * Corrige cláusulas inválidas `GROUP BY ... AS col`;
-  * Remove aliases redundantes (`col AS col`) nas views de contrato legado.
-- **Quality Gate Fail-Closed (37 Regras Arquiteturais):**
-  * `[ANTI_BOILERPLATE_GUARD]`: Rejeita qualquer placeholder, comentário TODO ou `SELECT * FROM` sem transformação;
-  * `[CONTRACT_TEST_GUARD]`: Executa `validators/contract_test.py` para inspecionar integridade de arquivos em disco;
-  * Executa `validators/test_architect_consistency.py` validando as **37 regras arquiteturais**;
-  * **Compilação Real do Dataform:** Executa `dataform compile --json` (`[DATAFORM_COMPILE_ERROR]`);
-  * **Auditoria de Paridade 4x4:** Garante consistência idêntica entre Catálogo SSOT, Especificação JSON, Artefatos em Disco e Documento PBI.
+  * Remove aliases redundantes (`col AS col`) nas views de contrato legado;
+  * Auto-cura expressões de serialização JSON de arrays para tratar elementos vazios (`['[]']`).
+- **Validação Semântica de Regra de Negócio e Paridade Bidirecional (`validators/business_logic_validator.py` — Regras BL_00 a BL_15):**
+  * `BL_00_MISSING_TARGET_SQLX`: Garante que 100% dos destinos de cards multi-target possuam arquivo `.sqlx` correspondente;
+  * `BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE`: Impede o rebaixamento acidental de cargas incrementais (append/upsert) para `type: "table"`;
+  * `BL_02_UPSERT_INCREMENTAL_FRAMEWORK`: Valida a semântica de upsert (`type: "incremental"` + `uniqueKey`);
+  * `BL_03_INSERT_NEW_ONLY_FRAMEWORK`: Valida insert-new-only (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`);
+  * `BL_04_DELETE_FROM_TARGET_FRAMEWORK`: Valida delete-from-target (`DELETE FROM ${self()}` em `pre_operations` / `post_operations`);
+  * `BL_05_PARTITION_PRUNING_UTC_OFFSET_GUARD`: Audita Partition Pruning escopado por alias SQL em tabelas massivas, bloqueando ausência de margem D - 1 entre partição UTC e filtro local;
+  * `BL_06_FROM_UTC_TIMESTAMP_GUARD`: Bloqueia chamadas Spark legadas (`from_utc_timestamp`), exigindo `DATETIME(..., '<Timezone_Local>')`;
+  * `BL_07_ARRAY_JSON_EMPTY_GUARD`: Protege serializações de array contra elementos vazios (`['[]']`) antes de `TO_JSON_STRING`;
+  * `BL_08_ANTI_BOILERPLATE_GUARD`: Rejeita qualquer placeholder, comentário TODO ou `SELECT * FROM` sem transformação;
+  * `BL_09_CONTRACT_TEST_GUARD`: Executa `validators/contract_test.py` para inspecionar integridade de arquivos em disco;
+  * `BL_10_ARCHITECTURAL_RULES_GUARD`: Executa `validators/test_architect_consistency.py` validando as **37 regras arquiteturais**;
+  * `BL_11_DATAFORM_COMPILE_ERROR`: Executa `dataform compile --json` real no repositório;
+  * `BL_12_PARITY_4X4_GUARD`: Garante consistência idêntica 4x4 entre Catálogo SSOT, Especificação JSON, Artefatos em Disco e PBI;
+  * `BL_13_LEGACY_CONTRACT_PROJECTION`: Valida projeção de aliases originais (`snake_col AS LegacyCol`) nas views de contrato legado;
+  * `BL_14_BIDIRECTIONAL_SCHEMA_TYPE_PARITY`: Executa validação bidirecional de tipos e schema de saída entre o motor legado (Spark/Databricks) e o BigQuery;
+  * `BL_15_CROSS_SHEET_UNIFIED_JOIN`: Valida joins unificados em pipelines que consolidam múltiplas abas/DataFrames de planilhas.
+- **Relatório de Testes Automatizados:** Gera `unit_test_report_*.md` somente após aprovação total de todas as regras.
 
 ---
 

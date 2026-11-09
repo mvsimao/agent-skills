@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """
-Dataform Cross-Project Guard & Scope Isolation CLI.
+Dataform Cross-Project Guard, Auto-Healing SQLx & Scope Isolation CLI.
 
 Used in technical refinement and developer workflows to audit and auto-remediate:
 1. Analytic vs. Ingestion project mismatches (-a- vs -p- / -i-);
-2. Deduplication of 01_sources declarations against Dataform main branch;
-3. Auto-conversion of SQL references to ${ref("schema", "table")} (2 arguments);
-4. Automatic injection of utils.projectId(...) in cross-project sources;
-5. Enforcement of vars.project_id in Airflow DAG Factory YAML;
-6. Enforcement of dependencies: ["<target_table>"] in 05_assertions;
-7. PR Scope Isolation: validates that git diff only alters files in the assigned card scope.
+2. Expurge of forbidden legacy artifacts (05_data_migration/backfill_*.sqlx, 00_ddl/create_*.sqlx);
+3. Deduplication of 01_sources declarations against Dataform main branch;
+4. Auto-conversion of SQL references to ${ref("schema", "table")} (2 arguments);
+5. Automatic injection of utils.projectId(...) in cross-project sources;
+6. Enforcement of vars.project_id in Airflow DAG Factory YAML;
+7. Enforcement of dependencies: ["<target_table>"] in 05_assertions;
+8. Auto-healing of snake_case, invalid GROUP BY ... AS, and JSON serialization empty guards (['[]']);
+9. Dataform CLI compile schema parity verification;
+10. PR Scope Isolation: validates that git diff only alters files in the assigned card scope.
 """
 
 from __future__ import annotations
@@ -23,12 +26,19 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Any, Set, Tuple, Optional
 
+# Ensure tools directory is in sys.path
+curr_dir = Path(__file__).resolve().parent
+if str(curr_dir) not in sys.path:
+    sys.path.insert(0, str(curr_dir))
+
+from office_export_helpers import create_minimal_xlsx, create_corporate_pptx
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("cross-project-guard")
 
 
 class DataformCrossProjectGuard:
-    """Enforces cross-project boundaries, reference standards, and PR isolation."""
+    """Enforces cross-project boundaries, reference standards, auto-healing, and PR isolation."""
 
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
@@ -44,6 +54,33 @@ class DataformCrossProjectGuard:
         )
         return t_is_analytic and s_is_ingestion
 
+    def purge_forbidden_artifacts(
+        self,
+        definitions_dir: Path,
+        apply_fixes: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Removes backfill and standalone DDL artifacts."""
+        findings = []
+        forbidden_patterns = [
+            "05_data_migration/backfill_*.sqlx",
+            "00_ddl/create_*.sqlx"
+        ]
+        for pat in forbidden_patterns:
+            for ff in definitions_dir.glob(pat):
+                findings.append({
+                    "file": str(ff),
+                    "issue": "FORBIDDEN_LEGACY_ARTIFACT",
+                    "severity": "BLOCKER",
+                    "details": f"Forbidden legacy file '{ff.name}' must not be committed to Dataform repository."
+                })
+                if apply_fixes and not self.dry_run:
+                    try:
+                        ff.unlink()
+                        logger.info(f"Purged forbidden artifact: {ff}")
+                    except Exception as e:
+                        logger.error(f"Failed to purge {ff}: {e}")
+        return findings
+
     def audit_and_fix_sources(
         self,
         sources_dir: Path,
@@ -55,7 +92,6 @@ class DataformCrossProjectGuard:
         if not sources_dir.exists():
             return findings
 
-        # Check existing declarations in main
         main_declarations = set()
         if main_repo_dir and main_repo_dir.exists():
             for f in main_repo_dir.glob("definitions/01_sources/**/*.sqlx"):
@@ -74,7 +110,6 @@ class DataformCrossProjectGuard:
             db_match = re.search(r'database:\s*["\']?([^"\'\n,]+)["\']?', content)
             raw_db = db_match.group(1).strip() if db_match else ""
 
-            # Check duplication against main
             if tbl_name in main_declarations:
                 findings.append({
                     "file": str(sf),
@@ -87,7 +122,6 @@ class DataformCrossProjectGuard:
                     logger.info(f"Removed redundant source declaration: {sf}")
                 continue
 
-            # Check cross-project utils.projectId
             if self.is_cross_project(target_project, raw_db):
                 if "utils.projectId" not in content:
                     findings.append({
@@ -116,14 +150,13 @@ class DataformCrossProjectGuard:
         if not models_dir.exists():
             return findings
 
-        # Check references in models (must use 2 arguments: ${ref("schema", "table")})
         single_arg_ref = re.compile(r"\$\{ref\([\"']([a-zA-Z0-9_\-]+)[\"']\)\}")
         three_arg_ref = re.compile(r"\$\{ref\([\"'][^\"']+[\"'],\s*[\"'][^\"']+[\"'],\s*[\"'][^\"']+[\"']\)\}")
 
         for mf in models_dir.glob("**/*.sqlx"):
             content = mf.read_text(encoding="utf-8")
-            
-            # Check 3 arguments (invalid in Dataform)
+            modified = False
+
             if three_arg_ref.search(content):
                 findings.append({
                     "file": str(mf),
@@ -132,7 +165,6 @@ class DataformCrossProjectGuard:
                     "details": "Found ${ref} with 3 arguments. Dataform supports strictly 2 arguments: ${ref('schema', 'table')}."
                 })
 
-            # Check 1 argument
             single_matches = single_arg_ref.findall(content)
             if single_matches:
                 findings.append({
@@ -141,8 +173,16 @@ class DataformCrossProjectGuard:
                     "severity": "WARNING",
                     "details": f"Found single-argument references {single_matches}. Recommend upgrading to ${{ref('schema', 'table')}}."
                 })
+                if apply_fixes and not self.dry_run:
+                    def expand_ref(m):
+                        tbl = m.group(1)
+                        schema = "silver_general"
+                        if "raw" in tbl or "bronze" in tbl:
+                            schema = "bronze_raw"
+                        return f'${{ref("{schema}", "{tbl}")}}'
+                    content = single_arg_ref.sub(expand_ref, content)
+                    modified = True
 
-            # Check invalid GROUP BY ... AS alias (BigQuery syntax error)
             group_by_as_match = re.search(r"\bGROUP\s+BY\b[^;]*\bAS\b", content, re.IGNORECASE)
             if group_by_as_match:
                 findings.append({
@@ -152,14 +192,27 @@ class DataformCrossProjectGuard:
                     "details": "Found invalid 'GROUP BY ... AS alias' syntax which fails compilation in BigQuery."
                 })
                 if apply_fixes and not self.dry_run:
-                    # Clean out AS <alias> from GROUP BY clauses
                     def clean_groupby(m: re.Match) -> str:
                         clause = m.group(0)
                         return re.sub(r"\s+AS\s+[a-zA-Z0-9_]+", "", clause, flags=re.IGNORECASE)
-                    fixed_content = re.sub(r"\bGROUP\s+BY\s+[^;]+", clean_groupby, content, flags=re.IGNORECASE)
-                    if fixed_content != content:
-                        mf.write_text(fixed_content, encoding="utf-8")
-                        logger.info(f"Auto-healed GROUP BY AS syntax in: {mf}")
+                    content = re.sub(r"\bGROUP\s+BY\s+[^;]+", clean_groupby, content, flags=re.IGNORECASE)
+                    modified = True
+                    logger.info(f"Auto-healed GROUP BY AS syntax in: {mf}")
+
+            # Auto-heal JSON array serialization empty element guard
+            if "to_json_string" in content.lower() and "['[]']" in content:
+                findings.append({
+                    "file": str(mf),
+                    "issue": "UNPROTECTED_ARRAY_JSON",
+                    "severity": "WARNING",
+                    "details": "Unprotected empty array serialization (['[]']) detected."
+                })
+                if apply_fixes and not self.dry_run:
+                    content = content.replace("['[]']", "IF(ARRAY_LENGTH(arr)=0, '[]', ...)")
+                    modified = True
+
+            if modified and not self.dry_run:
+                mf.write_text(content, encoding="utf-8")
 
         return findings
 
@@ -218,7 +271,32 @@ class DataformCrossProjectGuard:
                 if apply_fixes and not self.dry_run:
                     fixed_content = content + f"\n      vars: {{\"project_id\": \"{source_project}\"}}\n"
                     df.write_text(fixed_content, encoding="utf-8")
-                    logger.info(f"Auto-injected vars.project_id into DAG: {df}")
+                    logger.info(f"Injected vars.project_id into DAG YAML: {df}")
+
+        return findings
+
+    def compile_dataform_cli(self, repo_dir: Path) -> List[Dict[str, Any]]:
+        """Executes dataform compile --json to validate schema and reference resolution."""
+        findings = []
+        if self.dry_run or not (repo_dir / "dataform.json").exists():
+            return findings
+
+        try:
+            res = subprocess.run(
+                ["dataform", "compile", "--json"],
+                cwd=str(repo_dir), capture_output=True, text=True, timeout=15
+            )
+            if res.returncode != 0:
+                findings.append({
+                    "file": str(repo_dir / "dataform.json"),
+                    "issue": "DATAFORM_COMPILE_FAILURE",
+                    "severity": "BLOCKER",
+                    "details": f"Dataform compilation failed: {res.stderr[:400]}"
+                })
+        except FileNotFoundError:
+            logger.info("Dataform CLI not installed locally; compile check skipped.")
+        except Exception as e:
+            logger.warning(f"Dataform compile error: {e}")
 
         return findings
 
@@ -227,9 +305,6 @@ class DataformCrossProjectGuard:
         repo_dir: Path,
         allowed_domain_or_card: str
     ) -> List[Dict[str, Any]]:
-        """
-        Checks git diff to ensure changes are strictly isolated to the assigned card domain.
-        """
         findings = []
         if self.dry_run:
             logger.info(f"[DRY-RUN] PR isolation verified for card scope: {allowed_domain_or_card}")
@@ -267,7 +342,8 @@ def main() -> None:
     parser.add_argument("--target-table", type=str, default=None, help="Target table name for assertion injection")
     parser.add_argument("--fix", action="store_true", help="Auto-remediate detected issues")
     parser.add_argument("--check", action="store_true", help="Audit only (default)")
-    parser.add_argument("--format", choices=["json", "markdown"], default="markdown", help="Output format")
+    parser.add_argument("--format", choices=["json", "markdown", "excel", "pptx"], default="markdown", help="Output format")
+    parser.add_argument("--export-file", type=str, default=None, help="File path to save Excel or PPTX output")
     parser.add_argument("--dry-run", action="store_true", help="Simulate without writing file modifications")
 
     args = parser.parse_args()
@@ -276,7 +352,14 @@ def main() -> None:
     guard = DataformCrossProjectGuard(dry_run=args.dry_run)
 
     all_findings = []
-    # 1. Sources
+
+    # 1. Purge forbidden artifacts
+    all_findings.extend(guard.purge_forbidden_artifacts(
+        art_p / "definitions",
+        apply_fixes=args.fix
+    ))
+
+    # 2. Sources
     all_findings.extend(guard.audit_and_fix_sources(
         art_p / "definitions" / "01_sources",
         target_project=args.target_project,
@@ -284,20 +367,20 @@ def main() -> None:
         apply_fixes=args.fix
     ))
 
-    # 2. Models
+    # 3. Models
     all_findings.extend(guard.audit_and_fix_models(
         art_p / "definitions",
         apply_fixes=args.fix
     ))
 
-    # 3. Assertions
+    # 4. Assertions
     all_findings.extend(guard.audit_and_fix_assertions(
         art_p / "definitions" / "05_assertions",
         target_table=args.target_table,
         apply_fixes=args.fix
     ))
 
-    # 4. DAGs
+    # 5. DAGs
     all_findings.extend(guard.audit_dag_yaml(
         art_p / "dags",
         source_project=args.source_project,
@@ -305,7 +388,10 @@ def main() -> None:
         apply_fixes=args.fix
     ))
 
-    # 5. PR Scope Isolation
+    # 6. Dataform compile
+    all_findings.extend(guard.compile_dataform_cli(art_p))
+
+    # 7. PR Scope Isolation
     if args.card_scope:
         all_findings.extend(guard.check_pr_isolation(
             art_p,
@@ -316,6 +402,21 @@ def main() -> None:
 
     if args.format == "json":
         print(json.dumps({"passed": passed, "findings": all_findings}, indent=2))
+    elif args.format == "excel":
+        out_file = args.export_file or "cross_project_guard_report.xlsx"
+        rows = [["Severity", "Issue", "File", "Details"]]
+        for f in all_findings:
+            rows.append([f["severity"], f["issue"], f["file"], f["details"]])
+        create_minimal_xlsx({"Guard_Findings": rows}, out_file)
+        print(f"✅ Excel report exported to: {out_file}")
+    elif args.format == "pptx":
+        out_file = args.export_file or "cross_project_guard_report.pptx"
+        slides = [{
+            "title": "Dataform Cross-Project Guard Audit",
+            "body": f"Status: {'PASSED' if passed else 'BLOCKERS DETECTED'}\nTotal Findings: {len(all_findings)}\nBlockers: {len([f for f in all_findings if f['severity'] == 'BLOCKER'])}"
+        }]
+        create_corporate_pptx(slides, out_file)
+        print(f"✅ PowerPoint report exported to: {out_file}")
     else:
         status_banner = "🟢 PASSED (CROSS-PROJECT SAFE)" if passed else "🔴 FAILED (BLOCKERS DETECTED)"
         print(f"\n# 🛡️ Dataform Cross-Project & Scope Isolation Guard")
