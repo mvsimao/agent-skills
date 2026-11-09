@@ -53,53 +53,53 @@ The metrics below were audited in production during the continuous migration of 
 ```
 
 ### Audited Benchmark Highlights:
-- **Redução de Tempo de 99,6% (Speedup de 95x a 280x):** Tempo de refinamento + auditoria reduzido de **~52,9 min/card** (12h 20min para 14 cards no modelo legado de 10 skills multi-LLM) para **~11,3s/card** no passe determinístico com cache de sessão ativo (`fcntl.flock`, TTL 15–30 min), ou **~30s a 90s/card** incluindo tradução cirúrgica de SQL do zero pelo LLM em micro-lotes controlados de até 4 cards.
-- **Economia de 98% a 100% em Tokens de LLM:** Queda de **~2,8 milhões de tokens** (em lotes de 14 cards no fluxo legado) para **0 tokens** nas etapas determinísticas de descoberta, governança de 6 pilares, linhagem multi-hop de 6 camadas, scaffolding multi-target, auto-healing estrutural, validação semântica BL_00–BL_15 e montagem de PBI, acionando o LLM exclusivamente para tradução cirúrgica da query SQL (~3k–5k tokens/card) e extração estruturada de insumos de impedimento via modelo Flash (`gemini-2.5-flash`).
+- **99.6% Reduction in Cycle Time (95x to 280x Speedup):** Technical refinement + preflight audit time plummeted from **~52.9 min/card** (12h 20min for 14 cards in the legacy 10-skill multi-LLM setup) down to **~11.3s/card** in the deterministic pass with active session caching (`fcntl.flock`, TTL 15–30 min), or **~30s to 90s/card** when including full from-scratch surgical SQL query translation by the LLM in controlled micro-batches of <=4 cards.
+- **98% to 100% LLM Token Savings:** Token consumption dropped from **~2.8 million tokens** (for a 14-card batch in the legacy workflow) to **0 tokens** across deterministic discovery, 6-pillar cloud governance, 6-layer multi-hop lineage, multi-target scaffolding, structural auto-healing, BL_00–BL_15 semantic validation, and PBI assembly. The LLM is triggered exclusively for surgical query translation (~3k–5k tokens/card) and structured impediment diagnosis via `gemini-2.5-flash`.
 
 ---
 
 ## 🛡️ 2. Architectural Quality, Semantic Equivalence & Zero-Rework Guardrails
 
-- **100% de Aprovação no Quality Gate (37 Regras Arquiteturais + Validador Semântico BL_00–BL_15 + Suites S1–S6 + Compilação Real):**
-  Evolução de **71,4%** (fluxo legado com retrabalho frequente) para **100.0% First-Time-Right**:
-  * **Expurgo Automático de Artefatos Legados Proibidos (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):** Remove e bloqueia scripts de backfill manual (`05_data_migration/backfill_*.sqlx`), DDLs avulsos (`00_ddl/create_*.sqlx`) e subdiretórios aninhados duplicados dentro do repositório Dataform.
-  * **Auto-Healing Estrutural Pré-Auditoria (`_auto_heal_sqlx_before_audit`):** Utiliza um parser determinístico de chaves balanceadas para curar automaticamente desvios comuns antes da auditoria (remove comentários antes do `config {}`, funde blocos duplicados, converte `database:` hardcoded para `utils.projectId()`, restaura coordenadas contra `context_locked.json`, expande `${ref()}` de 1 argumento para 2 argumentos, corrige `GROUP BY ... AS` e limpa aliases redundantes).
-  * **Suporte Nativo a Multi-Target & Consolidação:** Suporta pipelines multi-tabela, múltiplos DataFrames auxiliares, consolidação de planilhas/abas e inlining automático de bibliotecas filhas importadas via `%run`.
-  * **Partition Pruning Escopado por Alias com Folga de Fuso Horário (`[PARTITION_PRUNING_UTC_OFFSET_GUARD]`):** Exige filtro direto sobre a coluna de partição física sem envolver a coluna em funções (`SAFE_CAST()`, `DATE()`) e obriga margem de segurança **D - 1** (`INTERVAL 1 DAY`) quando a partição estiver em UTC e o filtro de negócio em fuso local.
-  * **Conversão Explícita de Timezone & Serialização Segura de Arrays/JSON:** Exige tradução de funções Spark legadas via `DATETIME(..., '<Timezone_Local>')` e protege representações vazias (`['[]']`) antes de serializações `TO_JSON_STRING(...)`.
-  * **Equivalência Semântica de Cargas Incrementais:** Valida tradução de upsert (`type: "incremental"` + `uniqueKey`), insert-new-only (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`) e delete-from-target (`DELETE FROM ${self()}` em pre/post_operations).
-  * **Paridade Bidirecional de Tipos e Schemas:** Prioriza introspecção via Dataform CLI (`dataform compile --json`), views de contrato legado retrocompatíveis (`06_legacy_contracts`) e templates canônicos Airflow DAG Factory com proteção cross-project (`utils.projectId` + `vars.project_id`).
+- **100% Quality Gate Pass Rate (37 Architectural Rules + BL_00–BL_15 Semantic Validator + Suites S1–S6 + Real Compilation):**
+  Quality clearance evolved from **71.4%** (legacy prompt chain with constant human rework) to **100.0% First-Time-Right**:
+  * **Automated Legacy Artifact Purge (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):** Automatically removes and blocks manual backfill scripts (`05_data_migration/backfill_*.sqlx`), orphan DDLs (`00_ddl/create_*.sqlx`), and nested duplicate subdirectories inside the Dataform repository.
+  * **Pre-Audit Structural Auto-Healing (`_auto_heal_sqlx_before_audit`):** Uses a deterministic balanced-brace parser to automatically heal common syntax deviations before audit (strips comments preceding `config {}`, merges duplicate blocks, converts hardcoded `database:` strings to `utils.projectId()`, restores coordinates against `context_locked.json`, expands single-argument `${ref()}` to 2 arguments, fixes invalid `GROUP BY ... AS` clauses, and cleans redundant aliases).
+  * **Native Multi-Target & Consolidation Support:** Supports multi-table pipelines, multiple auxiliary DataFrames, sheet/tab consolidation, and recursive inlining of child libraries imported via `%run`.
+  * **Alias-Scoped Partition Pruning with Timezone Safety Margin (`[PARTITION_PRUNING_UTC_OFFSET_GUARD]`):** Enforces direct filtering on the physical partition column without wrapping it in disabling functions (`SAFE_CAST()`, `DATE()`), and mandates a **D - 1** (`INTERVAL 1 DAY`) safety margin whenever the physical partition is in UTC and business filtering operates in local time.
+  * **Explicit Timezone Conversion & Safe Array/JSON Serialization:** Mandates translation of legacy Spark timezone functions using `DATETIME(..., '<Timezone_Local>')` and guards empty array representations (`['[]']`) before `TO_JSON_STRING(...)` calls.
+  * **Semantic Equivalence for Incremental Loads:** Validates upsert semantics (`type: "incremental"` + `uniqueKey`), insert-new-only (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`), and delete-from-target (`DELETE FROM ${self()}` in pre/post_operations).
+  * **Bidirectional Schema and Type Parity:** Prioritizes introspection via the Dataform CLI (`dataform compile --json`), backward-compatible contract views (`06_legacy_contracts`), and canonical Airflow DAG Factory templates with cross-project protection (`utils.projectId` + `vars.project_id`).
 
-### Matriz dos Validadores Semânticos BL_00 a BL_15 (`business_logic_validator.py`):
+### Business Logic & Semantic Parity Matrix: BL_00 to BL_15 (`business_logic_validator.py`):
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                        BUSINESS LOGIC & SEMANTIC PARITY MATRIX (BL_00–BL_15)           │
 ├───────┬──────────────────────────────────────────┬─────────────────────────────────────┤
-│ Regra │ Nome do Validador Semântico              │ Garantia de Equivalência            │
+│ Rule  │ Semantic Validator Name                  │ Equivalence Guarantee               │
 ├───────┼──────────────────────────────────────────┼─────────────────────────────────────┤
-│ BL_00 │ BL_0_MISSING_TARGET_SQLX                 │ 100% dos destinos multi-target com  │
-│       │                                          │ arquivo .sqlx correspondente        │
-│ BL_01 │ BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE     │ Impede downgrade acidental de       │
-│       │                                          │ incremental para type: "table"      │
-│ BL_02 │ BL_02_UPSERT_INCREMENTAL_FRAMEWORK       │ Valida type: "incremental" com      │
-│       │                                          │ chave primária única (uniqueKey)    │
-│ BL_03 │ BL_03_INSERT_NEW_ONLY_FRAMEWORK          │ Valida insert-new com self-check    │
+│ BL_00 │ BL_0_MISSING_TARGET_SQLX                 │ 100% of multi-target destinations   │
+│       │                                          │ covered by a corresponding .sqlx    │
+│ BL_01 │ BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE     │ Prevents accidental downgrade of    │
+│       │                                          │ incremental loads to type: "table"  │
+│ BL_02 │ BL_02_UPSERT_INCREMENTAL_FRAMEWORK       │ Validates type: "incremental" with  │
+│       │                                          │ mandatory unique primary key        │
+│ BL_03 │ BL_03_INSERT_NEW_ONLY_FRAMEWORK          │ Validates insert-new self-check:    │
 │       │                                          │ NOT EXISTS (SELECT 1 FROM ${self()})│
-│ BL_04 │ BL_04_DELETE_FROM_TARGET_FRAMEWORK       │ Valida DELETE FROM ${self()} em     │
+│ BL_04 │ BL_04_DELETE_FROM_TARGET_FRAMEWORK       │ Validates DELETE FROM ${self()} in  │
 │       │                                          │ pre_operations/post_operations      │
-│ BL_05 │ PARTITION_PRUNING_UTC_OFFSET_GUARD       │ Filtro direto na partição com folga │
-│       │                                          │ D - 1 (INTERVAL 1 DAY) vs UTC       │
-│ BL_06 │ FROM_UTC_TIMESTAMP_GUARD                 │ Tradução Spark -> DATETIME(..., tz) │
-│ BL_07 │ ARRAY_JSON_EMPTY_GUARD                   │ Proteção de arrays vazios (['[]'])  │
-│       │                                          │ antes de TO_JSON_STRING             │
-│ BL_08 │ ANTI_BOILERPLATE_GUARD                   │ Rejeita PENDING_LLM, 1=1, SELECT *  │
-│ BL_09 │ CONTRACT_TEST_GUARD                      │ Integridade de arquivos e hashes    │
-│ BL_10 │ ARCHITECTURAL_RULES_GUARD                │ 37 regras arquiteturais estruturais │
-│ BL_11 │ DATAFORM_COMPILE_ERROR                   │ dataform compile --json real        │
-│ BL_12 │ PARITY_4X4_GUARD                         │ SSOT x Spec JSON x Artefatos x PBI  │
+│ BL_05 │ PARTITION_PRUNING_UTC_OFFSET_GUARD       │ Direct partition filter with D - 1  │
+│       │                                          │ safety margin (INTERVAL 1 DAY)      │
+│ BL_06 │ FROM_UTC_TIMESTAMP_GUARD                 │ Spark translation to DATETIME(...,tz│
+│ BL_07 │ ARRAY_JSON_EMPTY_GUARD                   │ Empty array guard (['[]']) before   │
+│       │                                          │ serializing with TO_JSON_STRING     │
+│ BL_08 │ ANTI_BOILERPLATE_GUARD                   │ Rejects PENDING_LLM, 1=1, SELECT *  │
+│ BL_09 │ CONTRACT_TEST_GUARD                      │ On-disk artifact integrity & hashes │
+│ BL_10 │ ARCHITECTURAL_RULES_GUARD                │ 37 structural architectural rules   │
+│ BL_11 │ DATAFORM_COMPILE_ERROR                   │ Real dataform compile --json check  │
+│ BL_12 │ PARITY_4X4_GUARD                         │ SSOT x Spec JSON x Code x PBI Parity│
 │ BL_13 │ LEGACY_CONTRACT_PROJECTION               │ Aliases snake_col AS LegacyCol      │
-│ BL_14 │ BIDIRECTIONAL_SCHEMA_TYPE_PARITY         │ Paridade Spark Schema vs BigQuery   │
-│ BL_15 │ CROSS_SHEET_UNIFIED_JOIN                 │ Joins unificados em multi-abas      │
+│ BL_14 │ BIDIRECTIONAL_SCHEMA_TYPE_PARITY         │ Parity of Spark Schema vs BigQuery  │
+│ BL_15 │ CROSS_SHEET_UNIFIED_JOIN                 │ Unified joins across multiple sheets│
 └───────┴──────────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
@@ -107,12 +107,12 @@ The metrics below were audited in production during the continuous migration of 
 
 ## 🚦 3. Flow Governance, Autonomous Unblocking & Critical Path Analysis (+2,400 Items)
 
-- **Mapeamento em Larga Escala do Caminho Crítico:**
-  O motor de linhagem multi-hop em 6 camadas combinado ao classificador de **8 Raias de Cards Pais** (`critical_path_and_wave_analyzer.py`) e ao **Investigador Híbrido Vertex AI Gemini + Sondas Python** permitiram auditar o efeito cascata sobre mais de **2.400 itens de backlog**:
-  * **97% dos Bloqueios em Cascata Concentrados em 8 Cards Pais:** Mais de 600 cards bloqueados dependiam de apenas 8 itens raiz. Ao priorizar esses 8 cards nas raias corretas, destravou-se a quase totalidade do backlog.
-  * **38% Quick Wins Identificados:** Centenas de cards retidos aguardavam tabelas upstream que já estavam **100% materializadas e populadas no BigQuery (`num_rows > 0`)**, permitindo liberação imediata para desenvolvimento.
-  * **Detecção de Armadilhas de Orquestradores Genéricos & Duplicatas:** Identificou cards marcados como `Done` que apenas migraram scripts agendadores mestres sem criar tabelas físicas filhas no DW, além de unificar cards duplicados via normalização canônica de caminhos.
-  * **Correção de Inversões Topológicas de Waves:** Reordenou dependências onde cartões pais estavam alocados em waves posteriores aos seus cards filhos, eliminando bloqueios estruturais sem disparar conflitos de regras de transição de estado no Kanban.
+- **Large-Scale Critical Path Backlog Traversal:**
+  The 6-layer multi-hop lineage engine combined with the **8 Official Unblocking Lanes** classifier (`critical_path_and_wave_analyzer.py`) and the **Hybrid Impediment Investigator (Vertex AI Gemini + Python Probes)** audited cascading dependencies across more than **2,400 backlog items**:
+  * **97% of Cascading Blockers Concentrated in Just 8 Parent Cards:** Over 600 blocked cards were bottlenecked by only 8 root parent cards. Prioritizing these 8 items into their appropriate unblocking lanes unlocked nearly the entire downstream backlog.
+  * **38% Quick Wins Identified:** Hundreds of blocked cards were waiting for upstream tables that were already **100% materialized and populated in BigQuery production (`num_rows > 0`)**, allowing immediate release to active development.
+  * **Detection of Generic Orchestrator Traps & Duplicate Cards:** Flagged cards marked as `Done` that only migrated master scheduler scripts without materializing physical child tables in the DW, while unifying duplicated work items through canonical path normalization.
+  * **Correction of Topological Wave Inversions:** Realigned inverted dependencies where parent cards had been scheduled in later waves than their child cards, eliminating structural deadlocks without triggering Kanban state transition conflicts.
 
 ---
 
@@ -215,8 +215,8 @@ flowchart TD
     ARTIFACTS["Modernized Artifacts (.sqlx / .yaml / PBI)"] --> GATE_RUN["stage3_validate_refinement_gate.py"]
     
     subgraph STAGE_3A["Pre-Audit Disinfection & Structural Auto-Healing"]
-        GATE_RUN --> PURGE["_purge_forbidden_legacy_dataform_files\nExpurga 05_data_migration & 00_ddl"]
-        PURGE --> HEAL["_auto_heal_sqlx_before_audit\nParser balanceado: config, utils.projectId, 2-arg ref, GROUP BY"]
+        GATE_RUN --> PURGE["_purge_forbidden_legacy_dataform_files\nPurge 05_data_migration & 00_ddl"]
+        PURGE --> HEAL["_auto_heal_sqlx_before_audit\nBalanced parser: config, utils.projectId, 2-arg ref, GROUP BY"]
     end
 
     subgraph STAGE_3B["Semantic Equivalence Engine (BL_00 to BL_15)"]
@@ -225,13 +225,13 @@ flowchart TD
         BL_ENG --> BL2["BL_01-BL_04: Incremental Load Equivalence (upsert/insert-only/delete)"]
         BL_ENG --> BL3["BL_05-BL_07: Partition Pruning D-1 Margin, Timezone & Array JSON"]
         BL_ENG --> BL4["BL_08-BL_13: Anti-Boilerplate, Contracts & Legacy Views"]
-        BL_ENG --> BL5["BL_14-BL_15: Introspecção CLI, Bidirecional & Cross-Sheet Joins"]
+        BL_ENG --> BL5["BL_14-BL_15: CLI Introspection, Bidirectional & Cross-Sheet Joins"]
     end
 
     subgraph STAGE_3C["Compilation & 4x4 Parity"]
         BL_ENG --> ARCH["test_architect_consistency.py (37 Rules)"]
         ARCH --> DF["dataform compile --json real ([DATAFORM_COMPILE_ERROR])"]
-        DF --> P4X4["contract_test.py (Paridade 4x4: SSOT x Spec x Code x PBI)"]
+        DF --> P4X4["contract_test.py (4x4 Parity: SSOT x Spec x Code x PBI)"]
         P4X4 --> S_SUITES["test_pbi_consistency.py (Suites S1–S6)"]
     end
 
@@ -279,7 +279,7 @@ flowchart TD
         SCAN1 --> PF{"cloud-preflight-infra-auditor (6 Pillars)"}
         PF -->|Blocked| TAG_IMP["Tag 'Infra-Blocked' & Move to Impediments via WEF"]
         PF -->|Cleared| REF["migration-spec-refiner (Micro-Batches <=4 Cards)"]
-        REF --> HEAL_GATE["Expurgo + Auto-Healing + BL_00–BL_15 + 37 Rules + dataform compile"]
+        REF --> HEAL_GATE["Purge + Auto-Healing + BL_00–BL_15 + 37 Rules + dataform compile"]
         HEAL_GATE --> PUB_GCS["Publish to gs://<artifacts-bucket>/cards/<id>/v1"]
         PUB_GCS --> OPT_PR{"Flag --open-pr active?"}
         OPT_PR -->|Yes| OPEN_PR["Create Clean Branch from main & Open PR"]
@@ -303,14 +303,14 @@ Using `tools/critical_path_and_wave_analyzer.py` combined with the 6-layer rever
 
 | Lane | Name & Strategic Focus | Operational Action |
 | :---: | :--- | :--- |
-| **Raia 1** | **Pai já Concluído (`Done`)** | Validar tabela física no BigQuery e destravar card filho imediatamente. |
-| **Raia 2** | **Pai em Fase Final (`Validation` / `Backfill`)** | **Maior Quick Win:** Priorizar homologação de negócio para destravar lote. |
-| **Raia 3A** | **Pai em Execução Ativa (`Refining` / `Ready` / `Test`)** | Acompanhar execução regular do squad produtor. |
-| **Raia 3B** | **Pai Parado em `Pre-Wave`** | Puxar card pai para refinamento técnico imediatamente e atribuir dev. |
-| **Raia 3C** | **Pai Também Bloqueado (`IMP` / `Task Dependency`)** | Atacar bloqueio raiz na infraestrutura para eliminar bloqueio em cadeia. |
-| **Raia 4** | **Inversão Topológica de Wave** | Reallocar card pai para Wave <= filho ou postergar filho no planejamento. |
-| **Raia 5** | **Armadilha de Orquestrador Concluído & Pai Cancelado** | Card `Done` migrou apenas script sem criar tabelas físicas no DW. |
-| **Raia 6** | **Tabela Órfã sem Card Pai (`SEM_PBI`)** | Cadastrar novo PBI de ingestão/transformação no backlog imediatamente. |
+| **Lane 1** | **Parent Already Completed (`Done`)** | Validate physical BigQuery table data and unblock child card immediately. |
+| **Lane 2** | **Parent in Final Stage (`Validation` / `Backfill`)** | **Top Quick Win:** Prioritize business sign-off to unlock the entire batch. |
+| **Lane 3A** | **Parent in Active Execution (`Refining` / `Ready` / `Test`)** | Track standard sprint execution of the producing squad. |
+| **Lane 3B** | **Parent Stalled in `Pre-Wave`** | Pull parent card into technical refinement immediately and assign developer. |
+| **Lane 3C** | **Parent Also Blocked (`IMP` / `Task Dependency`)** | Target root infrastructure blocker to eliminate chain deadlock. |
+| **Lane 4** | **Topological Wave Inversion** | Reallocate parent card to Wave <= child, or postpone child in planning. |
+| **Lane 5** | **Generic Orchestrator Trap & Cancelled Parent** | Card `Done` only migrated scheduler script without creating DW physical tables. |
+| **Lane 6** | **Orphan Table Without Parent Card (`SEM_PBI`)** | Register new ingestion/transformation PBI in backlog immediately. |
 
 ---
 

@@ -3,9 +3,9 @@ Stage 3: Fail-Closed Gate of 37 Architectural Rules, Business Logic Validator (B
 Pre-Audit Auto-Healing, Forbidden Artifact Purge, and 4x4 Parity.
 
 Responsibilities:
-- Expurgo Automático de Artefatos Legados Proibidos (_purge_forbidden_legacy_dataform_files / [FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]).
-- Auto-Healing Estrutural Pré-Auditoria (_auto_heal_sqlx_before_audit): balanced-braces parser curing syntax deviations.
-- Validação Semântica de Regra de Negócio e Paridade Bidirecional (validators/business_logic_validator.py — BL_00 a BL_15).
+- Automated legacy artifact purge (_purge_forbidden_legacy_dataform_files / [FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]).
+- Pre-audit structural auto-healing (_auto_heal_sqlx_before_audit): balanced-braces parser curing syntax deviations.
+- Business logic semantic validation & bidirectional parity (validators/business_logic_validator.py — BL_00 to BL_15).
 - Auto-restores any coordinate or config against context_locked.json.
 - Runs local validators in scripts/validators/:
     * test_architect_consistency.py (37 rules engine, physical disk inspection)

@@ -179,10 +179,10 @@ class AutonomousRefinementWorker:
                 self.governor.move_card(cid, "Ready")
                 self.governor.patch_comment_inplace(
                     cid,
-                    f"### 🟢 Desbloqueio Automático Confirmado (Hybrid Investigator)\n"
-                    f"**Veredito:** `{verdict}`\n"
-                    f"**Evidência:** {msg}\n"
-                    f"Card promovido automaticamente para `Ready`."
+                    f"### 🟢 Automated Unblock Confirmed (Hybrid Investigator)\n"
+                    f"**Verdict:** `{verdict}`\n"
+                    f"**Evidence:** {msg}\n"
+                    f"Card automatically promoted to `Ready`."
                 )
                 unblock_results.append({"card_id": cid, "status": "AUTO_UNBLOCKED", "verdict": verdict})
             else:

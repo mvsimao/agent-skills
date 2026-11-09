@@ -4,20 +4,20 @@ Critical Path & Wave Topological Analyzer.
 
 Enterprise Capabilities:
 1. Builds directed acyclic graph (DAG) of the backlog combining board links + 6-layer reverse lineage;
-2. Classifies every blocking Parent Card into the 8 Official Unblocking Lanes (Raias):
-   - Raia 1: Pai já Concluído (Done — Validar tabela no DW e destravar filho imediatamente)
-   - Raia 2: Pai em Fase Final (Validation / Backfill — Maior Quick Win de homologação)
-   - Raia 3A: Pai em Execução Ativa (Refining / Ready / Committed / Test)
-   - Raia 3B: Pai Parado em Pre-Wave (Puxar para Refinamento e atribuir responsável agora)
-   - Raia 3C: Pai Também Bloqueado (IMP / Task Dependency — Bloqueio em cadeia)
-   - Raia 4: Inversão Topológica de Wave (Pai alocado em Wave futura no Backlog bloqueando filho da Wave atual)
-   - Raia 5: Armadilha de Orquestrador Concluído (Card pai Done que migrou apenas script orquestrador sem criar tabelas físicas) & Pai Removido/Cancelado
-   - Raia 6: Tabela Órfã sem Card Pai (SEM_PBI — Exige abertura e vínculo de novo card)
+2. Classifies every blocking Parent Card into the 8 Official Unblocking Lanes:
+   - Lane 1: Parent Already Completed (Done — Validate table in DW and unblock child immediately)
+   - Lane 2: Parent in Final Stage (Validation / Backfill — Top business quick win)
+   - Lane 3A: Parent in Active Execution (Refining / Ready / Committed / Test)
+   - Lane 3B: Parent Stalled in Pre-Wave (Pull into Refinement and assign developer)
+   - Lane 3C: Parent Also Blocked (IMP / Task Dependency — Chain deadlock)
+   - Lane 4: Topological Wave Inversion (Parent allocated in future wave blocking child in current wave)
+   - Lane 5: Generic Orchestrator Trap (Parent marked Done that only migrated scheduler script) & Cancelled Parent
+   - Lane 6: Orphan Table Without Parent Card (SEM_PBI — Requires creating and linking new card)
 3. Calculates Cascade Reach & Opportunity Cost across +2,400 backlog items;
 4. Identifies Quick Wins (blocked cards whose upstream sources are 100% populated in BigQuery);
 5. Detects Duplicate Cards via canonical title/path normalization;
 6. Compares live state against previous baseline sheets;
-7. Exports comprehensive 8-sheet formatted Excel workbook (.xlsx), Markdown, and JSON.
+7. Exports comprehensive 8-sheet formatted Excel workbook (.xlsx), Markdown, JSON, and PowerPoint (.pptx).
 """
 
 from __future__ import annotations
@@ -42,14 +42,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("critical-path-analyzer")
 
 OFFICIAL_8_LANES = {
-    "RAIA_1": "1. Pai já Concluído (Done - Validar tabela no DW e destravar filho)",
-    "RAIA_2": "2. Pai em Fase Final (Validation / Backfill - Quick Win de homologação)",
-    "RAIA_3A": "3A. Pai em Execução Ativa (Refining / Ready / Committed / Test)",
-    "RAIA_3B": "3B. Pai Parado em Pre-Wave (Puxar para Refinamento e atribuir responsável)",
-    "RAIA_3C": "3C. Pai Também Bloqueado (IMP / Task Dependency - Bloqueio em cadeia)",
-    "RAIA_4": "4. Inversão Topológica de Wave (Pai em Wave futura bloqueando filho)",
-    "RAIA_5": "5. Armadilha de Orquestrador Concluído & Pai Removido/Cancelado",
-    "RAIA_6": "6. Tabela Órfã sem Card Pai (SEM_PBI - Exige abertura de card)",
+    "LANE_1": "1. Parent Already Completed (Done - Validate DW table & unblock child immediately)",
+    "LANE_2": "2. Parent in Final Stage (Validation / Backfill - Top business quick win)",
+    "LANE_3A": "3A. Parent in Active Execution (Refining / Ready / Committed / Test)",
+    "LANE_3B": "3B. Parent Stalled in Pre-Wave (Pull into refinement and assign developer)",
+    "LANE_3C": "3C. Parent Also Blocked (IMP / Task Dependency - Chain deadlock)",
+    "LANE_4": "4. Topological Wave Inversion (Parent in future wave blocking child)",
+    "LANE_5": "5. Generic Orchestrator Trap & Cancelled Parent (Scheduler only without physical tables)",
+    "LANE_6": "6. Orphan Table Without Parent Card (SEM_PBI - Requires new card)",
 }
 
 
@@ -159,7 +159,7 @@ class CriticalPathAndWaveAnalyzer:
 
             # If parent card does not exist in backlog
             if not p_card or pid.startswith("SEM_PBI"):
-                lane_key = "RAIA_6"
+                lane_key = "LANE_6"
                 action = "Cadastrar PBI no Backlog imediatamente e vincular aos cards consumidores."
             else:
                 status = p_card.get("status", "").upper()
@@ -179,30 +179,30 @@ class CriticalPathAndWaveAnalyzer:
 
                 if "DONE" in status or "CLOSED" in status or "RESOLVED" in status:
                     if is_orchestrator and p_card.get("target_table") is None:
-                        lane_key = "RAIA_5"
-                        action = "Armadilha de orquestrador! Validar se tabelas filhas foram criadas ou abrir card de tabela."
+                        lane_key = "LANE_5"
+                        action = "Generic orchestrator trap! Verify whether child physical tables exist or create table PBI."
                     else:
-                        lane_key = "RAIA_1"
-                        action = "Validar se dados existem no DW e destravar os filhos imediatamente."
+                        lane_key = "LANE_1"
+                        action = "Validate data in BigQuery DW and unblock child cards immediately."
                 elif "VALIDATION" in status or "BACKFILL" in status:
-                    lane_key = "RAIA_2"
-                    action = "Quick Win máximo! Acompanhar homologação final para destravar lote."
+                    lane_key = "LANE_2"
+                    action = "Top quick win! Follow up on business sign-off to unblock batch."
                 elif has_wave_inversion:
-                    lane_key = "RAIA_4"
-                    action = "Antecipar card pai para a Wave atual ou postergar os filhos."
+                    lane_key = "LANE_4"
+                    action = "Pull parent card to current Wave or postpone downstream child cards."
                 elif "IMP" in status or "BLOCK" in status or "WAIT" in status:
-                    lane_key = "RAIA_3C"
-                    action = "Desbloquear pai na raiz para evitar efeito cascata em cadeia."
+                    lane_key = "LANE_3C"
+                    action = "Unblock parent root cause to prevent downstream cascade deadlock."
                 elif "PRE-WAVE" in status or "NEW" in status or "TRIAGE" in status:
-                    lane_key = "RAIA_3B"
-                    action = "Puxar card pai para refinamento imediatamente e atribuir responsável."
+                    lane_key = "LANE_3B"
+                    action = "Pull parent card into technical refinement immediately and assign developer."
                 else:
-                    lane_key = "RAIA_3A"
-                    action = "Acompanhar execução ativa do card pai (Refining/Ready/Test)."
+                    lane_key = "LANE_3A"
+                    action = "Track active sprint execution of parent card (Refining/Ready/Test)."
 
             classified_parents.append({
                 "parent_id": pid,
-                "title": p_card.get("title", f"Card {pid}") if p_card else "Tabela sem PBI",
+                "title": p_card.get("title", f"Card {pid}") if p_card else "Orphan Table (SEM_PBI)",
                 "status": p_card.get("status", "SEM_PBI") if p_card else "SEM_PBI",
                 "wave": p_card.get("wave", "N/A") if p_card else "N/A",
                 "lane_key": lane_key,
@@ -310,7 +310,7 @@ class CriticalPathAndWaveAnalyzer:
                         }
                         for mc in matching_cards
                     ],
-                    "recommendation": "Consolidar em um único card mestre e cancelar as duplicatas.",
+                    "recommendation": "Consolidate into single canonical card and cancel redundant duplicates.",
                 })
 
         return duplicates
@@ -320,15 +320,15 @@ class CriticalPathAndWaveAnalyzer:
         current_parents: List[Dict[str, Any]],
         baseline_data: Optional[List[Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
-        """Compares current parent states against historical baseline (Onde Estavam vs Onde Estão Hoje)."""
+        """Compares current parent states against historical baseline (Where Parents Were vs Where They Are Now)."""
         base_map = {b["parent_id"]: b for b in (baseline_data or [])}
         comparison = []
 
         for p in current_parents:
             pid = p["parent_id"]
             b_item = base_map.get(pid, {})
-            b_status = b_item.get("status", "Novo Impedimento / Não Existia")
-            b_lane = b_item.get("lane_name", "Não Mapeado")
+            b_status = b_item.get("status", "New Blocker / Did Not Exist")
+            b_lane = b_item.get("lane_name", "Unmapped")
 
             status_evolved = p["status"] != b_status
             comparison.append({
@@ -338,7 +338,7 @@ class CriticalPathAndWaveAnalyzer:
                 "status_atual": p["status"],
                 "raia_anterior": b_lane,
                 "raia_atual": p["lane_name"],
-                "houve_evolucao": "Sim" if status_evolved else "Estável",
+                "houve_evolucao": "Yes" if status_evolved else "Stable",
                 "impacto_filhos": p["children_count"],
             })
 
@@ -361,8 +361,8 @@ class CriticalPathAndWaveAnalyzer:
         comparison = self.compare_with_baseline(classified_lanes, baseline_manifest)
 
         # Separate specific categories for specialized sheets
-        orchestrator_traps = [p for p in classified_lanes if p["lane_key"] == "RAIA_5"]
-        orphan_tables = [p for p in classified_lanes if p["lane_key"] == "RAIA_6"]
+        orchestrator_traps = [p for p in classified_lanes if p["lane_key"] == "LANE_5"]
+        orphan_tables = [p for p in classified_lanes if p["lane_key"] == "LANE_6"]
 
         return {
             "summary": {
@@ -389,35 +389,35 @@ class CriticalPathAndWaveAnalyzer:
         """Builds a concise, high-impact 2-sheet Executive Excel presentation (.xlsx)."""
         sheets: Dict[str, List[List[Any]]] = {}
 
-        # Sheet 1: Painel Executivo & KPIs (incl. Quick Wins)
+        # Sheet 1: Executive Dashboard & KPIs
         s1 = [
-            ["Métrica / Raia Oficial", "Volume", "Ação Estratégica"],
-            ["Total de Itens Auditados no Backlog", analysis["summary"]["total_cards_evaluated"], "Escala corporativa completa"],
-            ["Total de Dependências Mapeadas", analysis["summary"]["total_dependencies_mapped"], "Grafo direcionado Predecessor->Successor"],
-            ["Gargalos Pais Bloqueantes", analysis["summary"]["total_parent_bottlenecks"], "Foco de destravamento"],
-            ["Quick Wins (100% Prontos no DW)", analysis["summary"]["quick_wins_count"], "⚡ Destravar imediatamente hoje"],
-            ["Inversões Topológicas de Wave", analysis["summary"]["wave_inversions_count"], "Corrigir planejamento de ondas"],
-            ["Armadilhas de Orquestrador", analysis["summary"]["orchestrator_traps_count"], "Validar tabelas filhas físicas"],
-            ["Tabelas Órfãs (SEM_PBI)", analysis["summary"]["orphan_tables_count"], "Cadastrar PBI no backlog"],
+            ["Metric / Official Lane", "Volume", "Strategic Action"],
+            ["Total Backlog Items Audited", analysis["summary"]["total_cards_evaluated"], "Complete enterprise portfolio scale"],
+            ["Total Dependencies Mapped", analysis["summary"]["total_dependencies_mapped"], "Directed acyclic graph (Predecessor->Successor)"],
+            ["Blocking Parent Bottlenecks", analysis["summary"]["total_parent_bottlenecks"], "Focus of unblocking effort"],
+            ["Quick Wins (100% Populated in DW)", analysis["summary"]["quick_wins_count"], "⚡ Unblock immediately today"],
+            ["Topological Wave Inversions", analysis["summary"]["wave_inversions_count"], "Realign wave scheduling"],
+            ["Generic Orchestrator Traps", analysis["summary"]["orchestrator_traps_count"], "Verify child physical DW tables"],
+            ["Orphan Tables (SEM_PBI)", analysis["summary"]["orphan_tables_count"], "Register PBI in backlog"],
             ["---", "---", "---"],
-            ["[DISTRIBUIÇÃO NAS 8 RAIAS OFICIAIS]", "---", "---"],
+            ["[DISTRIBUTION ACROSS 8 OFFICIAL LANES]", "---", "---"],
         ]
         lane_counts = defaultdict(int)
         for cl in analysis["classified_lanes"]:
             lane_counts[cl["lane_name"]] += 1
         for lname, ldesc in OFFICIAL_8_LANES.items():
-            s1.append([ldesc, lane_counts[ldesc], "Prioridade operacional conforme categoria"])
+            s1.append([ldesc, lane_counts[ldesc], "Operational priority according to category"])
 
         if analysis["quick_wins"]:
             s1.append(["---", "---", "---"])
-            s1.append(["[QUICK WINS IMEDIATOS - FONTES 100% NO DW]", "Linhas no DW", "Ação de Liberação"])
+            s1.append(["[IMMEDIATE QUICK WINS - 100% POPULATED IN DW]", "DW Row Count", "Action Required"])
             for q in analysis["quick_wins"]:
                 s1.append([f"{q['card_id']}: {q['title']}", q["verified_dwh_rows"], q["recommendation"]])
 
-        sheets["1. Painel Executivo & KPIs"] = s1
+        sheets["1. Executive Dashboard & KPIs"] = s1
 
-        # Sheet 2: Plano de Ação - Quem Cobrar
-        s2 = [["Card Pai ID", "Título do Card Pai", "Raia Oficial", "Status Atual", "Wave", "Impacto em Cascata (Filhos)", "Ação Imediata de Desbloqueio", "Amostra de Cards Destravados"]]
+        # Sheet 2: Action Plan
+        s2 = [["Parent Card ID", "Parent Title", "Official Lane", "Current Status", "Wave", "Cascade Impact (Children)", "Immediate Action", "Unblocked Cards Sample"]]
         for p in analysis["classified_lanes"]:
             unblocked_sample = ", ".join(p["children_ids"][:8])
             s2.append([
@@ -430,7 +430,7 @@ class CriticalPathAndWaveAnalyzer:
                 p["action"],
                 unblocked_sample
             ])
-        sheets["2. Plano de Ação (Quem Cobrar)"] = s2
+        sheets["2. Unblocking Action Plan"] = s2
 
         return create_minimal_xlsx(sheets, output_path)
 
@@ -438,15 +438,15 @@ class CriticalPathAndWaveAnalyzer:
         """Builds a formatted 8-sheet Excel presentation (.xlsx)."""
         sheets: Dict[str, List[List[Any]]] = {}
 
-        # 1. Resumo Executivo & 8 Raias
+        # 1. Executive Summary & 8 Lanes
         s1 = [
-            ["Métrica / Raia", "Total Itens", "Ação Estratégica"],
-            ["Total de Itens Auditados no Backlog", analysis["summary"]["total_cards_evaluated"], "Escala corporativa completa"],
-            ["Total de Dependências Mapeadas", analysis["summary"]["total_dependencies_mapped"], "Grafo direcionado Predecessor->Successor"],
-            ["Quick Wins (100% no DW)", analysis["summary"]["quick_wins_count"], "Destravar imediatamente"],
-            ["Inversões Topológicas de Wave", analysis["summary"]["wave_inversions_count"], "Corrigir planejamento de ondas"],
-            ["Armadilhas de Orquestrador", analysis["summary"]["orchestrator_traps_count"], "Validar tabelas filhas"],
-            ["Tabelas Órfãs (SEM_PBI)", analysis["summary"]["orphan_tables_count"], "Cadastrar PBI no backlog"],
+            ["Metric / Lane", "Total Items", "Strategic Action"],
+            ["Total Backlog Items Audited", analysis["summary"]["total_cards_evaluated"], "Complete enterprise portfolio scale"],
+            ["Total Dependencies Mapped", analysis["summary"]["total_dependencies_mapped"], "Directed acyclic graph Predecessor->Successor"],
+            ["Quick Wins (100% in DW)", analysis["summary"]["quick_wins_count"], "Unblock immediately"],
+            ["Topological Wave Inversions", analysis["summary"]["wave_inversions_count"], "Realign wave scheduling"],
+            ["Generic Orchestrator Traps", analysis["summary"]["orchestrator_traps_count"], "Verify child physical DW tables"],
+            ["Orphan Tables (SEM_PBI)", analysis["summary"]["orphan_tables_count"], "Register PBI in backlog"],
             ["---", "---", "---"],
         ]
         lane_counts = defaultdict(int)
@@ -454,64 +454,64 @@ class CriticalPathAndWaveAnalyzer:
             lane_counts[cl["lane_name"]] += 1
         for lname, ldesc in OFFICIAL_8_LANES.items():
             desc = OFFICIAL_8_LANES[lname]
-            s1.append([desc, lane_counts[desc], "Prioridade operacional conforme categoria"])
-        sheets["1. Resumo & 8 Raias"] = s1
+            s1.append([desc, lane_counts[desc], "Operational priority according to category"])
+        sheets["1. Summary & 8 Lanes"] = s1
 
-        # 2. Visão Consolidada (1 Linha por Card Pai)
-        s2 = [["Card Pai ID", "Título", "Status Atual", "Wave", "Raia Oficial", "Filhos Bloqueados", "Ação de Desbloqueio"]]
+        # 2. Consolidated Parent View
+        s2 = [["Parent Card ID", "Title", "Current Status", "Wave", "Official Lane", "Blocked Children", "Unblocking Action"]]
         for p in analysis["classified_lanes"]:
             s2.append([
                 p["parent_id"], p["title"], p["status"], p["wave"], p["lane_name"], p["children_count"], p["action"]
             ])
-        sheets["2. Visão 1 Linha por Pai"] = s2
+        sheets["2. Consolidated Parents"] = s2
 
-        # 3. Top Gargalos & Cascata
-        s3 = [["Rank", "Card Pai ID", "Título", "Status", "Wave", "Impacto em Cascata (Filhos)", "Lista de Cards Destravados"]]
+        # 3. Top Bottlenecks & Cascade
+        s3 = [["Rank", "Parent Card ID", "Title", "Status", "Wave", "Cascade Impact (Children)", "Unblocked Cards List"]]
         for idx, b in enumerate(analysis["top_bottlenecks"], start=1):
             s3.append([
                 idx, b["parent_id"], b["title"], b["status"], b["wave"], b["cascade_unblocked_count"], ", ".join(b["unblocked_cards"][:10])
             ])
-        sheets["3. Top Gargalos & Cascata"] = s3
+        sheets["3. Top Bottlenecks"] = s3
 
-        # 4. Quick Wins (100% no DW)
-        s4 = [["Card ID", "Título", "Status", "Linhas Verificadas no DW", "Fontes Upstream", "Ação Recomendada"]]
+        # 4. Quick Wins in DW
+        s4 = [["Card ID", "Title", "Status", "Verified DW Rows", "Upstream Sources", "Recommended Action"]]
         for q in analysis["quick_wins"]:
             s4.append([
                 q["card_id"], q["title"], q["status"], q["verified_dwh_rows"], ", ".join(q["upstream_sources"]), q["recommendation"]
             ])
-        sheets["4. Quick Wins no DW"] = s4
+        sheets["4. DW Quick Wins"] = s4
 
-        # 5. Inversões Topológicas Wave
-        s5 = [["Card Consumidor", "Wave Consumidor", "Card Predecessor", "Wave Predecessor", "Severidade", "Ação Corretiva"]]
+        # 5. Wave Inversions
+        s5 = [["Consumer Card", "Consumer Wave", "Predecessor Card", "Predecessor Wave", "Severity", "Corrective Action"]]
         for inv in analysis["wave_inversions"]:
             s5.append([
                 inv["consumer_card_id"], inv["consumer_wave"], inv["predecessor_card_id"], inv["predecessor_wave"], inv["inversion_severity"], inv["suggested_fix"]
             ])
-        sheets["5. Inversões de Wave"] = s5
+        sheets["5. Wave Inversions"] = s5
 
-        # 6. Armadilhas Orquestrador
-        s6 = [["Card ID", "Título", "Status", "Filhos Dependentes", "Risco", "Ação"]]
+        # 6. Orchestrator Traps
+        s6 = [["Card ID", "Title", "Status", "Dependent Children", "Risk", "Action"]]
         for ot in analysis["orchestrator_traps"]:
             s6.append([
-                ot["parent_id"], ot["title"], ot["status"], ot["children_count"], "Migrou apenas agendador sem criar tabelas físicas no DW", ot["action"]
+                ot["parent_id"], ot["title"], ot["status"], ot["children_count"], "Migrated scheduler only without creating physical tables in DW", ot["action"]
             ])
-        sheets["6. Armadilhas Orquestrador"] = s6
+        sheets["6. Orchestrator Traps"] = s6
 
-        # 7. Tabelas Órfãs (SEM_PBI)
-        s7 = [["Tabela Órfã", "Cards Filhos Afetados", "Quantidade de Filhos", "Ação Obrigatória"]]
+        # 7. Orphan Tables (SEM_PBI)
+        s7 = [["Orphan Table", "Affected Child Cards", "Child Card Count", "Mandatory Action"]]
         for orf in analysis["orphan_tables"]:
             s7.append([
                 orf["parent_id"], ", ".join(orf["children_ids"]), orf["children_count"], orf["action"]
             ])
-        sheets["7. Tabelas Órfãs SEM_PBI"] = s7
+        sheets["7. Orphan Tables SEM_PBI"] = s7
 
-        # 8. Comparativo Baseline vs Hoje
-        s8 = [["Card Pai ID", "Título", "Status Anterior", "Status Atual", "Raia Anterior", "Raia Atual", "Houve Evolução?", "Impacto Filhos"]]
+        # 8. Baseline Comparison
+        s8 = [["Parent Card ID", "Title", "Previous Status", "Current Status", "Previous Lane", "Current Lane", "Evolved?", "Child Impact"]]
         for comp in analysis["baseline_comparison"]:
             s8.append([
                 comp["parent_id"], comp["title"], comp["status_anterior"], comp["status_atual"], comp["raia_anterior"], comp["raia_atual"], comp["houve_evolucao"], comp["impacto_filhos"]
             ])
-        sheets["8. Comparativo Baseline"] = s8
+        sheets["8. Baseline Comparison"] = s8
 
         return create_minimal_xlsx(sheets, output_path)
 
@@ -519,17 +519,17 @@ class CriticalPathAndWaveAnalyzer:
 def format_markdown_report(analysis: Dict[str, Any]) -> str:
     s = analysis["summary"]
     md = [
-        "# 📈 Relatório Executivo: Caminho Crítico, 8 Raias de Desbloqueio & Efeito Cascata",
-        f"- **Total de Itens Auditados no Backlog:** `{s['total_cards_evaluated']}`",
-        f"- **Total de Vínculos de Dependência:** `{s['total_dependencies_mapped']}`",
-        f"- **Gargalos Pais Identificados:** `{s['total_parent_bottlenecks']}`",
-        f"- **Quick Wins Disponíveis:** `{s['quick_wins_count']}` (Fontes 100% no DW)",
-        f"- **Inversões Topológicas de Wave:** `{s['wave_inversions_count']}`",
-        f"- **Armadilhas de Orquestrador:** `{s['orchestrator_traps_count']}`",
-        f"- **Tabelas Órfãs (SEM_PBI):** `{s['orphan_tables_count']}`\n",
+        "# 📈 Executive Report: Critical Path, 8 Unblocking Lanes & Cascade Impact",
+        f"- **Total Backlog Items Audited:** `{s['total_cards_evaluated']}`",
+        f"- **Total Dependencies Mapped:** `{s['total_dependencies_mapped']}`",
+        f"- **Identified Parent Bottlenecks:** `{s['total_parent_bottlenecks']}`",
+        f"- **Available Quick Wins:** `{s['quick_wins_count']}` (100% Populated in DW)",
+        f"- **Topological Wave Inversions:** `{s['wave_inversions_count']}`",
+        f"- **Generic Orchestrator Traps:** `{s['orchestrator_traps_count']}`",
+        f"- **Orphan Tables (SEM_PBI):** `{s['orphan_tables_count']}`\n",
         "---",
-        "## 🚦 As 8 Raias Oficiais de Desbloqueio",
-        "| Raia Oficial | Total Pais | Ação Estratégica |",
+        "## 🚦 The 8 Official Unblocking Lanes",
+        "| Official Lane | Parent Count | Strategic Action |",
         "| :--- | :---: | :--- |",
     ]
 
@@ -537,13 +537,13 @@ def format_markdown_report(analysis: Dict[str, Any]) -> str:
     for cl in analysis["classified_lanes"]:
         lane_counts[cl["lane_name"]] += 1
     for lname, ldesc in OFFICIAL_8_LANES.items():
-        md.append(f"| **{ldesc}** | `{lane_counts[ldesc]}` | Priorizar conforme esteira de homologação/refinamento |")
+        md.append(f"| **{ldesc}** | `{lane_counts[ldesc]}` | Prioritize according to refinement stage |")
 
     md.extend([
         "",
         "---",
-        "## 1. 🚀 Top Gargalos de Maior Impacto em Cascata (Opportunity Cost)",
-        "| Rank | Card Pai | Título | Status | Wave | Filhos Destravados |",
+        "## 1. 🚀 Top Bottlenecks by Cascade Impact (Opportunity Cost)",
+        "| Rank | Parent Card | Title | Status | Wave | Children Unblocked |",
         "| :--- | :--- | :--- | :--- | :--- | :--- |",
     ])
     for idx, b in enumerate(analysis["top_bottlenecks"], start=1):
@@ -552,12 +552,12 @@ def format_markdown_report(analysis: Dict[str, Any]) -> str:
     md.extend([
         "",
         "---",
-        "## 2. ⚡ Quick Wins Imediatos (Fontes 100% no BigQuery)",
+        "## 2. ⚡ Immediate Quick Wins (100% Populated in BigQuery DW)",
     ])
     if not analysis["quick_wins"]:
-        md.append("*Nenhum quick win disponível.*")
+        md.append("*No immediate quick wins available.*")
     else:
-        md.append("| Card ID | Título | Status | Linhas no DW | Ação |")
+        md.append("| Card ID | Title | Status | Verified DW Rows | Action |")
         md.append("| :--- | :--- | :--- | :--- | :--- |")
         for q in analysis["quick_wins"]:
             md.append(f"| **`{q['card_id']}`** | {q['title']} | `{q['status']}` | `{q['verified_dwh_rows']:,}` rows | {q['recommendation']} |")
@@ -565,17 +565,17 @@ def format_markdown_report(analysis: Dict[str, Any]) -> str:
     md.extend([
         "",
         "---",
-        "## 3. 🔄 Inversões Topológicas de Wave",
+        "## 3. 🔄 Topological Wave Inversions",
     ])
     if not analysis["wave_inversions"]:
-        md.append("*Backlog 100% consistente topologicamente.*")
+        md.append("*Backlog is 100% topologically consistent.*")
     else:
-        md.append("| Card Consumidor | Wave Filho | Card Predecessor | Wave Pai | Severidade | Correção Sugerida |")
+        md.append("| Consumer Card | Child Wave | Predecessor Card | Parent Wave | Severity | Suggested Correction |")
         md.append("| :--- | :---: | :--- | :---: | :---: | :--- |")
         for inv in analysis["wave_inversions"]:
             md.append(f"| `{inv['consumer_card_id']}` | Wave {inv['consumer_wave']} | `{inv['predecessor_card_id']}` | Wave {inv['predecessor_wave']} | `{inv['inversion_severity']}` | {inv['suggested_fix']} |")
 
-    md.append("\n*Relatório gerado deterministically via `tools/critical_path_and_wave_analyzer.py`.*")
+    md.append("\n*Report deterministically generated via `tools/critical_path_and_wave_analyzer.py`.*")
     return "\n".join(md)
 
 

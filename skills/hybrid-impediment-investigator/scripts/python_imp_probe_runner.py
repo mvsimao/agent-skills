@@ -380,31 +380,31 @@ class PythonImpedimentProbeRunner:
             f"# 🔍 Hybrid Impediment Investigation Report: `{card_id}`",
             f"**Verdict:** {icon} `{verdict}` — {probe_summary['summary']}\n",
             "---",
-            "## 📌 Bloco 1: Resumo Executivo da Causa Raiz",
-            f"- **Código Canônico:** `{diagnosis.get('canonical_code', 'IMP_C01')}` — **{diagnosis.get('canonical_title', 'General Impediment')}**",
-            f"- **Confiança do Modelo:** `{diagnosis.get('confidence_score', 0.95) * 100:.1f}%`",
-            f"- **Diagnóstico:** {diagnosis.get('executive_summary', 'N/A')}\n",
+            "## 📌 Block 1: Executive Summary & Root Cause",
+            f"- **Canonical Code:** `{diagnosis.get('canonical_code', 'IMP_C01')}` — **{diagnosis.get('canonical_title', 'General Impediment')}**",
+            f"- **Model Confidence:** `{diagnosis.get('confidence_score', 0.95) * 100:.1f}%`",
+            f"- **Diagnosis:** {diagnosis.get('executive_summary', 'N/A')}\n",
             "---",
-            "## 🎯 Bloco 2: Ações Recomendadas de Desbloqueio",
+            "## 🎯 Block 2: Recommended Unblocking Actions",
         ]
 
         if "READY" in verdict:
-            md.append("✅ **Ação Imediata:** Mover card para `Ready` / `Refining` no Kanban e prosseguir com a esteira de desenvolvimento.")
+            md.append("✅ **Immediate Action:** Promote card to `Ready` / `Refining` on Kanban and resume development pipeline.")
         elif "PARTIALLY" in verdict:
-            md.append("⚠️ **Ação Parcial:** Validar itens pendentes abaixo com os squads responsáveis.")
+            md.append("⚠️ **Partial Action:** Validate remaining items below with responsible squads.")
         else:
-            md.append("🛑 **Ação de Escalonamento:** O card permanece impedido aguardando as seguintes dependências externas.")
+            md.append("🛑 **Escalation Action:** Card remains blocked awaiting the following external dependencies.")
 
         md.extend([
             "",
             "---",
-            "## 🔬 Bloco 3: Resultados Detalhados das Sondas Determinísticas (GCP / Git / Board)",
-            "| Sonda | Alvo | Status | Resolvido? | Detalhes |",
+            "## 🔬 Block 3: Deterministic Probe Results (GCP / Git / Agile Board)",
+            "| Probe | Target | Status | Resolved? | Details |",
             "| :--- | :--- | :--- | :---: | :--- |",
         ])
 
         for p in probe_summary.get("probe_results", []):
-            res_icon = "✅ Sim" if p.get("resolved") else "❌ Não"
+            res_icon = "✅ Yes" if p.get("resolved") else "❌ No"
             md.append(f"| `{p.get('probe')}` | `{p.get('target')}` | `{p.get('status')}` | {res_icon} | {p.get('details')} |")
 
         md.append("")

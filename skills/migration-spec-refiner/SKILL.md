@@ -10,137 +10,139 @@ description: >-
 
 # ⚙️ Migration Spec Refiner (.py-First + Surgical LLM + Micro-Batch Queue)
 
-Skill orquestradora de refinamento técnico de ponta a ponta baseada no paradigma **`.py`-First + LLM Cirúrgico + Fila Encadeada de Micro-Lotes**, substituindo 10 skills legadas multi-agente por **4 ferramentas Python determinísticas** + suíte de validação auto-contida (`scripts/validators/`).
+End-to-end technical refinement orchestrator skill founded on the **`.py`-First + Surgical LLM + Chained Micro-Batch** architecture, replacing 10 legacy multi-agent prompt chains with **4 deterministic Python engines** + self-contained architectural and semantic validator suites (`scripts/validators/`).
 
 ```mermaid
 flowchart TD
-    subgraph QUEUE["Controle de Fila Encadeada Persistente (refine_card_orchestrator.py)"]
-        ENQ["--enqueue <ids...> (100+ cards)"] --> PERSIST[("refinement_batch_queue.json\nCache de Sessão: flock + TTL 15-30m")]
-        PERSIST --> WIN["Janela Controlada: --max-active 1 a 4 cards"]
+    subgraph QUEUE["Persistent Chained Batch Queue Engine (refine_card_orchestrator.py)"]
+        ENQ["--enqueue <ids...> (100+ cards)"] --> PERSIST[("refinement_batch_queue.json\nSession Cache: flock + TTL 15-30m")]
+        PERSIST --> WIN["Controlled Window: --max-active 1 to 4 cards"]
     end
 
-    subgraph STAGE1["Estágio 1: Live origin/main SSOT Lock, %run & Contexto"]
+    subgraph STAGE1["Stage 1: Live origin/main SSOT Lock, %run & Context Resolution"]
         WIN --> FETCH["git fetch origin main"]
-        FETCH --> S1["resolve_refinement_context.py\n• Repositórios regionais (sam/nam/eur) & hmg -> dev\n• Canonização universal de views (vw*)\n• Extração %run (imported_libraries_code)\n• schedule_cron & partition_field (Partition Pruning)\n• Dicionário legacy_columns via AST\n• Filtro Rule D-32 (Egress & discarded_by)"]
-        S1 --> CTX[("context_locked.json (Contrato Imutável)")]
+        FETCH --> S1["resolve_refinement_context.py\n• Regional repositories (sam/nam/eur) & hmg -> dev\n• Universal view canonization (vw*)\n• %run extraction (imported_libraries_code)\n• schedule_cron & partition_field (Partition Pruning)\n• AST legacy_columns dictionary\n• Rule D-32 filter (Egress & discarded_by)"]
+        S1 --> CTX[("context_locked.json (Immutable Contract)")]
     end
 
-    subgraph STAGE2["Estágio 2: Scaffolding Multi-Target & Auto-Cura snake_case"]
-        CTX --> S2["scaffold_dataform_and_review.py\n• Helper projectId(acronym) em includes/utils.js\n• 01_sources/*.sqlx com utils.projectId()\n• 03_silver/04_gold com partitionBy, columns, ${ref(2-args)}\n• 05_assertions com dependencies\n• 06_legacy_contracts: views retrocompatíveis\n• dags/<region>/<dag_id>.yaml (Airflow DAG Factory)"]
-        S2 --> DETECT{"Contém [PENDING_LLM_TRANSLATION]\nou SELECT *?"}
+    subgraph STAGE2["Stage 2: Multi-Target Scaffolding & snake_case Auto-Healing"]
+        CTX --> S2["scaffold_dataform_and_review.py\n• Helper projectId(acronym) in includes/utils.js\n• 01_sources/*.sqlx with utils.projectId()\n• 03_silver/04_gold with partitionBy, columns, ${ref(2-args)}\n• 05_assertions with dependencies\n• 06_legacy_contracts: backward-compatible views\n• dags/<region>/<dag_id>.yaml (Airflow DAG Factory)"]
+        S2 --> DETECT{"Contains [PENDING_LLM_TRANSLATION]\nor SELECT *?"}
     end
 
-    subgraph SURGICAL["Pausa Cirúrgica Obrigatória (Trava Anti-Pulo)"]
-        DETECT -->|Sim| PROMPT["Gera *_surgical_llm_prompt.md\n(Código legado integral + %run + Regras de Partition Pruning)"]
-        PROMPT --> PAUSE["🛑 PAUSA OBRIGATÓRIA: Exit Code 10 (AWAITING_SURGICAL_LLM)\nTrava anti-pulo: impede abertura de novos cards até conclusão do LLM"]
-        PAUSE --> LLM["LLM Cirúrgico: Tradução estrita do corpo SELECT (~3k-5k tokens)"]
+    subgraph SURGICAL["Mandatory Surgical Translation Pause (Anti-Skip Guard)"]
+        DETECT -->|Yes| PROMPT["Generate *_surgical_llm_prompt.md\n(Full Legacy Code + %run + Partition Pruning D-1 Margin)"]
+        PROMPT --> PAUSE["🛑 MANDATORY PAUSE: Exit Code 10 (AWAITING_SURGICAL_LLM)\nAnti-skip guard: blocks new cards until LLM finishes SQL translation"]
+        PAUSE --> LLM["Surgical LLM: SELECT Body ONLY (~3k-5k tokens)"]
     end
 
-    subgraph STAGE3["Estágio 3: Auto-Healing Pré-Auditoria + Gate Fail-Closed (37 Regras)"]
-        LLM & DETECT -->|Não| S3["validate_refinement_gate.py"]
-        S3 --> HEAL["_auto_heal_sqlx_before_audit (Parser de Chaves Balanceadas)\n• Funde config duplicados\n• Converte database hardcoded -> utils.projectId()\n• Expande ref 1-arg -> 2-args\n• Corrige GROUP BY AS & limpa aliases redundantes"]
-        HEAL --> G1["[ANTI_BOILERPLATE_GUARD] & [CONTRACT_TEST_GUARD]"]
-        HEAL --> G2["test_architect_consistency.py (37 Regras Arquiteturais)"]
-        HEAL --> G3["dataform compile --json real ([DATAFORM_COMPILE_ERROR])"]
-        HEAL --> G4["Paridade 4x4 (SSOT, Spec JSON, Disco, PBI)"]
+    subgraph STAGE3["Stage 3: Pre-Audit Auto-Healing + BL_00–BL_15 + Fail-Closed Gate"]
+        LLM & DETECT -->|No / Ready| S3["validate_refinement_gate.py"]
+        S3 --> PURGE["_purge_forbidden_legacy_dataform_files\n(Removes 05_data_migration & 00_ddl)"]
+        PURGE --> HEAL["_auto_heal_sqlx_before_audit (Balanced-Brace Parser)\n• Merges duplicate configs\n• Converts database: hardcoded -> utils.projectId()\n• Expands ref 1-arg -> 2-args\n• Corrects GROUP BY AS & cleans redundant aliases"]
+        HEAL --> BL["validators/business_logic_validator.py (BL_00 to BL_15)"]
+        BL --> G1["[ANTI_BOILERPLATE_GUARD] & [CONTRACT_TEST_GUARD]"]
+        G1 --> G2["test_architect_consistency.py (37 Architectural Rules)"]
+        G2 --> G3["dataform compile --json real ([DATAFORM_COMPILE_ERROR])"]
+        G3 --> G4["4x4 Parity Check (SSOT, Spec JSON, Disk, PBI)"]
     end
 
-    subgraph STAGE4["Estágio 4: Paridade por Construção, Suítes S1–S6 & Publicação"]
-        G1 & G2 & G3 & G4 --> S4["build_and_publish_pbi.py\n• Injeção Seção 1 & 3.3 da mesma lista canônica em memória\n• test_pbi_consistency.py (Suites S1 a S6)\n• Links clicáveis Seção 4.1\n• Vínculos topológicos (Predecessor -> Successor)\n• Tag 'Refined' no Board\n• Telemetria atômica (flock + os.replace)"]
-        S4 --> PR_CHECK{"Flag --open-pr ativa?"}
-        PR_CHECK -->|Sim| GIT_PR["Cria branch limpa da main, staging estrito dos artefatos e abre PR"]
-        PR_CHECK -->|Não| NEXT_CARD["Avança para os próximos cards da fila encadeada"]
+    subgraph STAGE4["Stage 4: Parity by Construction, Suites S1–S6 & Publishing"]
+        G4 --> S4["build_and_publish_pbi.py\n• Section 1 & 3.3 inlined from identical in-memory canonical list\n• test_pbi_consistency.py (Suites S1 to S6)\n• Clickable links in Section 4.1\n• Predecessor -> Successor topological linking\n• Tag 'Refined' on Board\n• Atomic telemetry (flock + os.replace)"]
+        S4 --> PR_CHECK{"Flag --open-pr active?"}
+        PR_CHECK -->|Yes| GIT_PR["Creates clean branch from main, stages artifacts strictly & opens PR"]
+        PR_CHECK -->|No| NEXT_CARD["Advances to next cards in the chained micro-batch queue"]
     end
 ```
 
 ---
 
-## 🏛️ Os 4 Estágios Determinísticos & Arquitetura de Fila
+## 🏛️ The 4 Deterministic Stages & Queue Architecture
 
-### Controle de Fila Encadeada Persistente (`refine_card_orchestrator.py`)
-- **Modos em 2 Fases:** Suporta `--phase pre-llm` (Estágios 1 e 2 até a pausa cirúrgica) e `--phase post-llm` (Auto-healing, Gate 3, Compilação e Publicação).
-- **Enfileiramento em Escala:** Comandos `--enqueue <ids...>`, `--next`, `--queue-status`, `--clear-queue` com janela controlada configurável (`--max-active 1` a `4`).
-- **Trava Anti-Pulo de Tradução (`Exit Code 10 - AWAITING_SURGICAL_LLM`):** O orquestrador bloqueia a abertura de novos cards enquanto houver cards ativos aguardando tradução cirúrgica do SQL pelo LLM, assegurando zero geração com código incompleto ou placeholders.
-- **Auto-Reset de Cache de Sessão:** Limpa automaticamente caches temporários ao iniciar uma nova fila (`--enqueue`/`--clear-queue`), mantendo **Cache de Sessão Seguro (`fcntl.flock`, TTL 15–30 min apenas para resultados positivos `READY`)** entre as fases do mesmo lote.
-- **Integração de Esteira:** Flags integradas `--upstream-checker` (dispara auditoria de linhagem imediatamente após a publicação) e `--open-pr` (cria branch isolada a partir de `origin/main`, faz staging estrito dos arquivos gerados e abre/atualiza o Pull Request).
-
----
-
-### Estágio 1: Live `origin/main` SSOT Lock, Bibliotecas `%run` & Pre-Flight (`resolve_refinement_context.py`)
-- **Sincronização SSOT com `origin/main`:** Executa `git fetch origin main` e carrega o catálogo canônico mais recente, resolvendo repositórios regionais (`sam`, `nam`, `eur`), proteção de ambientes de homologação (`hmg` ➔ `dev`), canonização universal de views legadas (`vw*`) e bloqueio contra auto-dependência.
-- **Extração Integral de Código e Bibliotecas `%run`:** Carrega o código legado completo (`legacy_code_full`) e resolve recursivamente bibliotecas filhas importadas via `%run` ou imports Python (`imported_libraries_code`).
-- **Extração de Metadados Críticos:** Extrai `schedule_cron`, chave de partição (`partition_field` / `bq_partition_field`) e o **dicionário de colunas de destino (`legacy_columns`)** via catálogo ou AST do código.
-- **Filtro de Descartados & Egress (Regra D-32):** Descarta automaticamente destinos anotados como `discarded_by` e destinos de egress que não são tabelas (`EMAIL`, `SFTP`, `WEBHOOK`, `DATA_APPLICATION_API`).
-- **Contrato Imutável:** Grava `context_locked.json` contendo o estado auditado antes de qualquer scaffold.
+### Persistent Chained Batch Queue Engine (`refine_card_orchestrator.py`)
+- **Two-Phase Execution Modes:** Supports `--phase pre-llm` (Stages 1 and 2 up to surgical pause) and `--phase post-llm` (Purge, Auto-healing, Gate 3, BL_00–BL_15, Compilation, and Publishing).
+- **High-Throughput Enqueueing:** CLI commands `--enqueue <ids...>`, `--next`, `--queue-status`, `--clear-queue` with configurable concurrency windows (`--max-active 1` to `4`).
+- **Anti-Skip Translation Lock (`Exit Code 10 - AWAITING_SURGICAL_LLM`):** Prevents progressing new cards while any active card awaits surgical SQL translation from the LLM, ensuring zero boilerplate or placeholder leaks in production.
+- **Session Cache Auto-Reset:** Automatically resets temporary caches upon initializing a new queue (`--enqueue`/`--clear-queue`), maintaining a **Secure Session Cache (`fcntl.flock`, TTL 15–30 min for positive `READY` outcomes)** between pipeline phases.
+- **Continuous Integration Pipeline:** Integrated flags `--upstream-checker` (triggers lineage audit immediately following Stage 4) and `--open-pr` (branches cleanly from `origin/main`, stages strictly batch artifacts, validates Gate 3, and opens/updates the Pull Request).
 
 ---
 
-### Estágio 2: Geração Multi-Target, DAG YAML Canônico & Prompt Cirúrgico (`scaffold_dataform_and_review.py`)
-Gera deterministicamente a suíte de artefatos para **todos os destinos do card (`ctx["targets"]` - suporte nativo a Multi-Target)**:
-1. `definitions/01_sources/*.sqlx`: Reutiliza declarações existentes na `main` sem duplicar; injeta obrigatoriamente `database: utils.projectId("<acronym>")` em fontes cross-project (`p-*` / `i-*` lidos por `a-*`).
-2. `definitions/03_silver/<domain>/<table>.sqlx` (ou `04_gold`):
-   - Injeta bloco `config { type: "table", bigquery: { partitionBy: "..." }, columns: { ... } }`.
-   - Referencia fontes exclusivamente via `${ref("schema", "tabela")}` (2 argumentos).
-   - Normaliza nomes de colunas para `snake_case` sem corromper cláusulas `GROUP BY`.
+### Stage 1: Live `origin/main` SSOT Lock, `%run` Libraries & Pre-Flight (`resolve_refinement_context.py`)
+- **Authoritative `origin/main` Synchronization:** Runs `git fetch origin main` and loads canonical catalogs directly from the default branch, resolving regional repositories (`sam`, `nam`, `eur`), non-production redirect safeguards (`hmg` ➔ `dev`), universal view canonization (`vw*`), and anti-self-dependency guards.
+- **Full Source Ingestion & `%run` Inlining:** Loads the entire legacy source script (`legacy_code_full`) and recursively extracts child libraries imported via `%run` or Python imports (`imported_libraries_code`).
+- **Metadata Extraction:** Extracts `schedule_cron`, partition keys (`partition_field` / `bq_partition_field`), and the **destination column dictionary (`legacy_columns`)** via catalog or AST source parsing.
+- **Discarded Targets & Egress Filter (Rule D-32):** Filters out targets marked `discarded_by` and non-table egress destinations (`EMAIL`, `SFTP`, `WEBHOOK`, `DATA_APPLICATION_API`).
+- **Immutable Contract:** Persists `context_locked.json` recording the verified state prior to any scaffolding.
+
+---
+
+### Stage 2: Multi-Target Scaffolding, Canonical DAG YAML & Surgical Prompt (`scaffold_dataform_and_review.py`)
+Deterministically scaffolds the complete suite of artifacts for **all card destinations (`ctx["targets"]` - native Multi-Target support)**:
+1. `definitions/01_sources/*.sqlx`: Reuses existing definitions from `main` without duplication; injects `database: utils.projectId("<acronym>")` on cross-project sources (`p-*` / `i-*` read by `a-*`).
+2. `definitions/03_silver/<domain>/<table>.sqlx` (or `04_gold`):
+   - Injects `config { type: "incremental", bigquery: { partitionBy: "..." }, columns: { ... } }`.
+   - References upstream tables strictly via `${ref("schema", "table")}` (2 arguments).
+   - Normalizes column identifiers to `snake_case` without breaking `GROUP BY` syntax.
 3. `definitions/05_assertions/<domain>/assert_unique_<table>.sqlx`:
-   - Injeta obrigatoriamente `dependencies: ["<target_table>"]` no bloco `config {}`.
+   - Injects mandatory `dependencies: ["<target_table>"]` in the `config {}` block.
 4. `definitions/06_legacy_contracts/<domain>/vw_<table>.sqlx`:
-   - View de contrato com projeção reversa (`snake_col AS LegacyCol`) para garantir 100% de retrocompatibilidade com dashboards legados.
+   - Backward-compatible contract view with reverse projection (`snake_col AS LegacyCol`).
 5. `dags/<region>/<dag_id>.yaml`:
-   - Template canônico do **Airflow DAG Factory** com `"vars": {"project_id": "<canonical_source_project>"}` em cenários cross-project.
-- **Pausa Obrigatória e Regras de Partition Pruning:** Se qualquer arquivo contiver `[PENDING_LLM_TRANSLATION]` ou `SELECT *`, emite o arquivo `*_surgical_llm_prompt.md` contendo as diretrizes estritas de **Partition Pruning** (exigindo filtro direto sobre a coluna de partição sem envolver em funções como `SAFE_CAST()` ou `DATE()` que desabilitam a poda no BigQuery) e pausa a execução com **`Exit Code 10`**.
+   - Canonical **Airflow DAG Factory** YAML with `"vars": {"project_id": "<canonical_source_project>"}` in cross-project setups.
+- **Mandatory Surgical Pause & Partition Pruning Rules:** If any generated file contains `[PENDING_LLM_TRANSLATION]` or `SELECT *`, emits `*_surgical_llm_prompt.md` containing strict **Partition Pruning guidelines** (mandating direct column predicates without wrapping functions like `SAFE_CAST()` or `DATE()`, and enforcing a **D - 1** margin between UTC physical partitions and local business filters) and pauses execution with **`Exit Code 10`**.
 
 ---
 
-### Estágio 3: Expurgo de Artefatos Proibidos + Auto-Healing Pré-Auditoria + Validador Semântico BL_00–BL_15 + Gate Fail-Closed (37 Regras) + Compilação Real (`validate_refinement_gate.py`)
-- **Expurgo Automático de Artefatos Legados Proibidos (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):**
-  Remove e bloqueia scripts de backfill manual (`05_data_migration/backfill_*.sqlx`), DDLs avulsos (`00_ddl/create_*.sqlx`) e subdiretórios aninhados duplicados dentro do repositório Dataform.
-- **Auto-Healing Estrutural Pré-Auditoria (`_auto_heal_sqlx_before_audit`):**
-  Parser determinístico de chaves balanceadas que corrige automaticamente antes da validação:
-  * Remove comentários e caracteres espúrios antes do bloco `config {}`;
-  * Funde blocos `config {}` duplicados;
-  * Converte tokens de `database:` hardcoded para `utils.projectId(...)`;
-  * Restaura `schema:` e `name:` divergentes contra o `context_locked.json`;
-  * Injeta tags e `partitionBy` ausentes;
-  * Expande chamadas `${ref("table")}` de 1 argumento para 2 argumentos `${ref("schema", "table")}`;
-  * Corrige cláusulas inválidas `GROUP BY ... AS col`;
-  * Remove aliases redundantes (`col AS col`) nas views de contrato legado;
-  * Auto-cura expressões de serialização JSON de arrays para tratar elementos vazios (`['[]']`).
-- **Validação Semântica de Regra de Negócio e Paridade Bidirecional (`validators/business_logic_validator.py` — Regras BL_00 a BL_15):**
-  * `BL_00_MISSING_TARGET_SQLX`: Garante que 100% dos destinos de cards multi-target possuam arquivo `.sqlx` correspondente;
-  * `BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE`: Impede o rebaixamento acidental de cargas incrementais (append/upsert) para `type: "table"`;
-  * `BL_02_UPSERT_INCREMENTAL_FRAMEWORK`: Valida a semântica de upsert (`type: "incremental"` + `uniqueKey`);
-  * `BL_03_INSERT_NEW_ONLY_FRAMEWORK`: Valida insert-new-only (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`);
-  * `BL_04_DELETE_FROM_TARGET_FRAMEWORK`: Valida delete-from-target (`DELETE FROM ${self()}` em `pre_operations` / `post_operations`);
-  * `BL_05_PARTITION_PRUNING_UTC_OFFSET_GUARD`: Audita Partition Pruning escopado por alias SQL em tabelas massivas, bloqueando ausência de margem D - 1 entre partição UTC e filtro local;
-  * `BL_06_FROM_UTC_TIMESTAMP_GUARD`: Bloqueia chamadas Spark legadas (`from_utc_timestamp`), exigindo `DATETIME(..., '<Timezone_Local>')`;
-  * `BL_07_ARRAY_JSON_EMPTY_GUARD`: Protege serializações de array contra elementos vazios (`['[]']`) antes de `TO_JSON_STRING`;
-  * `BL_08_ANTI_BOILERPLATE_GUARD`: Rejeita qualquer placeholder, comentário TODO ou `SELECT * FROM` sem transformação;
-  * `BL_09_CONTRACT_TEST_GUARD`: Executa `validators/contract_test.py` para inspecionar integridade de arquivos em disco;
-  * `BL_10_ARCHITECTURAL_RULES_GUARD`: Executa `validators/test_architect_consistency.py` validando as **37 regras arquiteturais**;
-  * `BL_11_DATAFORM_COMPILE_ERROR`: Executa `dataform compile --json` real no repositório;
-  * `BL_12_PARITY_4X4_GUARD`: Garante consistência idêntica 4x4 entre Catálogo SSOT, Especificação JSON, Artefatos em Disco e PBI;
-  * `BL_13_LEGACY_CONTRACT_PROJECTION`: Valida projeção de aliases originais (`snake_col AS LegacyCol`) nas views de contrato legado;
-  * `BL_14_BIDIRECTIONAL_SCHEMA_TYPE_PARITY`: Executa validação bidirecional de tipos e schema de saída entre o motor legado (Spark/Databricks) e o BigQuery;
-  * `BL_15_CROSS_SHEET_UNIFIED_JOIN`: Valida joins unificados em pipelines que consolidam múltiplas abas/DataFrames de planilhas.
-- **Relatório de Testes Automatizados:** Gera `unit_test_report_*.md` somente após aprovação total de todas as regras.
+### Stage 3: Forbidden Artifact Purge + Pre-Audit Auto-Healing + Semantic Validator BL_00–BL_15 + 37 Rules Gate + Real Compilation (`validate_refinement_gate.py`)
+- **Automated Legacy Artifact Purge (`_purge_forbidden_legacy_dataform_files` / `[FORBIDDEN_LEGACY_DATAFORM_ARTIFACTS_GUARD]`):**
+  Removes and blocks manual backfill scripts (`05_data_migration/backfill_*.sqlx`), standalone DDLs (`00_ddl/create_*.sqlx`), and nested duplicate subdirectories.
+- **Pre-Audit Structural Auto-Healing (`_auto_heal_sqlx_before_audit`):**
+  Deterministic balanced-brace parser curing syntax deviations prior to audit:
+  * Strips comments and stray characters before `config {}`;
+  * Merges duplicate `config {}` blocks;
+  * Converts hardcoded `database:` strings to `utils.projectId(...)`;
+  * Restores divergent `schema:` and `name:` attributes against `context_locked.json`;
+  * Injects missing tags and `partitionBy` clauses;
+  * Expands single-arg `${ref("table")}` to 2-arg `${ref("schema", "table")}`;
+  * Fixes invalid `GROUP BY ... AS col` clauses;
+  * Removes redundant aliases (`col AS col`) in contract views;
+  * Auto-heals array JSON serialization to safely guard empty elements (`['[]']`).
+- **Business Logic & Semantic Parity Validator (`validators/business_logic_validator.py` — Rules BL_00 to BL_15):**
+  * `BL_00_MISSING_TARGET_SQLX`: Guarantees 100% of targets from multi-target cards possess `.sqlx` definitions;
+  * `BL_01_INCREMENTAL_DOWNGRADE_TO_TABLE`: Blocks accidental downgrade of incremental models to `type: "table"`;
+  * `BL_02_UPSERT_INCREMENTAL_FRAMEWORK`: Validates upsert semantics (`type: "incremental"` + `uniqueKey`);
+  * `BL_03_INSERT_NEW_ONLY_FRAMEWORK`: Validates insert-new-only logic (`NOT EXISTS (SELECT 1 FROM ${self()} ...)`);
+  * `BL_04_DELETE_FROM_TARGET_FRAMEWORK`: Validates delete-from-target (`DELETE FROM ${self()}` in `pre_operations`);
+  * `BL_05_PARTITION_PRUNING_UTC_OFFSET_GUARD`: Audits alias-scoped partition pruning on large tables, guarding against missing D - 1 margins between UTC partitions and local filters;
+  * `BL_06_FROM_UTC_TIMESTAMP_GUARD`: Blocks Spark `from_utc_timestamp`, enforcing `DATETIME(..., '<Timezone_Local>')`;
+  * `BL_07_ARRAY_JSON_EMPTY_GUARD`: Guards empty array serializations (`['[]']`) before `TO_JSON_STRING`;
+  * `BL_08_ANTI_BOILERPLATE_GUARD`: Rejects `[PENDING_LLM_TRANSLATION]`, `TODO`, `PLACEHOLDER`, `1=1`, and `SELECT * FROM`;
+  * `BL_09_CONTRACT_TEST_GUARD`: Executes `validators/contract_test.py` to inspect on-disk file integrity;
+  * `BL_10_ARCHITECTURAL_RULES_GUARD`: Evaluates the **37 architectural consistency rules**;
+  * `BL_11_DATAFORM_COMPILE_ERROR`: Executes real `dataform compile --json` compilation;
+  * `BL_12_PARITY_4X4_GUARD`: Asserts 4x4 parity across SSOT Catalog, Spec JSON, Code, and PBI Documentation;
+  * `BL_13_LEGACY_CONTRACT_PROJECTION`: Validates backward-compatible projection (`snake_col AS LegacyCol`) in contract views;
+  * `BL_14_BIDIRECTIONAL_SCHEMA_TYPE_PARITY`: Asserts bidirectional schema and type parity between legacy Spark and BigQuery;
+  * `BL_15_CROSS_SHEET_UNIFIED_JOIN`: Validates unified joins/unions in multi-sheet ingestion consolidation.
+- **Unit Test Report Generation:** Generates `unit_test_report_*.md` upon 100% pass across all validation suites.
 
 ---
 
-### Estágio 4: Paridade por Construção, Suítes S1–S6 & Publicação (`build_and_publish_pbi.py`)
-- **Paridade por Construção:** Injeta a Seção 1 (Identificação de Destinos) e a Seção 3.3 (Dicionário de Colunas) a partir da **mesma lista canônica em memória**, eliminando divergências de documentação.
-- **Validação de Suítes S1 a S6:** Executa `validators/test_pbi_consistency.py`.
-- **Publicação e Rastreabilidade:**
-  - Gera links clicáveis para 100% dos artefatos na Seção 4.1;
-  - Cria vínculos de dependência na direção topológica correta (`Predecessor` ➔ `Successor`);
-  - Aplica a tag `Refined` no gerenciador de tarefas (`--publish-ado`);
-  - Grava telemetria de execução com escrita atômica concorrente (`fcntl.flock` + `tempfile` + `os.replace`).
+### Stage 4: Parity by Construction, Suites S1–S6 & Publishing (`build_and_publish_pbi.py`)
+- **Parity by Construction:** Generates Section 1 (Target Identification) and Section 3.3 (Column Dictionary) from the **identical in-memory canonical list**, eliminating documentation drift.
+- **Suites S1 through S6 Validation:** Executes `validators/test_pbi_consistency.py`.
+- **Publication & Traceability:**
+  - Injects clickable links for 100% of generated artifacts in Section 4.1;
+  - Creates agile dependency links in the exact topological direction (`Predecessor` ➔ `Successor`);
+  - Applies tag `Refined` in agile board (`--publish-ado`);
+  - Records execution telemetry with atomic concurrency locks (`fcntl.flock` + `tempfile` + `os.replace`).
 
 ---
 
 ## 🛠️ CLI Execution & Usage
 
-### 1. Enfileirar e Executar Fase Pré-LLM (Micro-Lote <=4 cards)
+### 1. Enqueue and Run Pre-LLM Phase (Micro-Batch <=4 cards)
 ```bash
 python3 skills/migration-spec-refiner/scripts/refine_card_orchestrator.py \
   --enqueue MIG-101 MIG-102 MIG-103 MIG-104 \
@@ -148,7 +150,7 @@ python3 skills/migration-spec-refiner/scripts/refine_card_orchestrator.py \
   --phase pre-llm
 ```
 
-### 2. Retomar Fase Pós-LLM após Tradução Cirúrgica (Gate 3 + Compilação + PBI)
+### 2. Resume Post-LLM Phase After Surgical Translation (Gate 3 + Compilation + PBI)
 ```bash
 python3 skills/migration-spec-refiner/scripts/refine_card_orchestrator.py \
   --phase post-llm \
@@ -156,12 +158,12 @@ python3 skills/migration-spec-refiner/scripts/refine_card_orchestrator.py \
   --open-pr
 ```
 
-### 3. Consultar Status da Fila Encadeada
+### 3. Check Queue Status
 ```bash
 python3 skills/migration-spec-refiner/scripts/refine_card_orchestrator.py --queue-status
 ```
 
-### 4. Execução Isolada de um Único Card
+### 4. Standalone Single-Card Refinement
 ```bash
 python3 skills/migration-spec-refiner/scripts/refiner_pipeline.py \
   --ticket-id MIG-502 \

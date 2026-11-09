@@ -194,11 +194,11 @@ class BoardWorkflowGovernor:
         """Formats batch execution results for quick squad standup communication."""
         lines = []
         if cleared_cards:
-            lines.append(f"🟢 **Liberados para Desenvolvimento ({len(cleared_cards)} cards):** {', '.join(cleared_cards)}")
+            lines.append(f"🟢 **Cleared for Development ({len(cleared_cards)} cards):** {', '.join(cleared_cards)}")
         if blocked_cards:
-            lines.append(f"🔴 **Bloqueados por Dependência / Infra ({len(blocked_cards)} cards):** {', '.join(blocked_cards)}")
+            lines.append(f"🔴 **Blocked by Dependency / Infra ({len(blocked_cards)} cards):** {', '.join(blocked_cards)}")
         if not cleared_cards and not blocked_cards:
-            lines.append("ℹ️ Nenhum card elegível para transição no lote atual.")
+            lines.append("ℹ️ No cards eligible for transition in current batch.")
         return "\n".join(lines)
 
     def synthesize_sre_requests(
@@ -226,26 +226,26 @@ class BoardWorkflowGovernor:
             elif "GIT" in res_type or "REPO" in res_type:
                 grouped["Dataform Git Repositories"].append(f)
             else:
-                grouped["Conectividade de Rede & Outros Recursos"].append(f)
+                grouped["Network Connectivity & Other Resources"].append(f)
 
         md = []
-        md.append("# 📋 Síntese de Demandas de Infraestrutura para Time SRE / Cloud IaC\n")
-        md.append("> **Objetivo:** Provisionar os recursos abaixo para desbloquear esteira de modernização de dados.\n")
+        md.append("# 📋 SRE / Cloud IaC Infrastructure Demand Synthesis\n")
+        md.append("> **Objective:** Provision the resources below to unblock the data platform modernization pipeline.\n")
 
         for cat, items in grouped.items():
-            md.append(f"### 🔹 {cat} ({len(items)} itens pendentes)")
+            md.append(f"### 🔹 {cat} ({len(items)} pending items)")
             for it in items:
                 res_id = it.get("resource_id", "N/A")
                 details = it.get("details", "")
                 iac = it.get("remediation_iac", "")
                 cli = it.get("remediation_cli", "")
 
-                md.append(f"- **Recurso:** `{res_id}`  ")
-                md.append(f"  *Diagnóstico:* {details}")
+                md.append(f"- **Resource:** `{res_id}`  ")
+                md.append(f"  *Diagnostic:* {details}")
                 if cli:
-                    md.append(f"  *Comando CLI:* `{cli}`")
+                    md.append(f"  *CLI Command:* `{cli}`")
                 if iac:
-                    md.append(f"  *Bloco Terraform:*\n```hcl\n{iac}\n```")
+                    md.append(f"  *Terraform Block:*\n```hcl\n{iac}\n```")
             md.append("")
 
         return "\n".join(md)

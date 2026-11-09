@@ -27,12 +27,12 @@ logger = logging.getLogger("vertex-gemini-imp-extractor")
 
 # The 6 Canonical Macro-Causes (Pragmatic & Mutually Exclusive)
 CANONICAL_IMPEDIMENT_TAXONOMY = {
-    "INFRA_MISSING": "Recurso Cloud Ausente (Dataset, Bucket, Secret ou Tabela DML 404)",
-    "IAM_PERMISSION": "Permissão Cloud Negada (IAM BigQuery, Drive Sheets 403, Service Account)",
-    "UPSTREAM_UNREADY": "Dependência Upstream Incompleta (Tabela 0 rows, Predecessor não iniciado)",
-    "WAVE_INVERSION": "Desalinhamento Topológico de Backlog (Inversão de Wave, Card Duplicado)",
-    "CODE_OR_SYNTAX": "Inconsistência de Código ou Contrato (Sintaxe Dataform, tipos, chaves)",
-    "AWAITING_HUMAN": "Aguardando Decisão Humana ou Homologação (Negócio, PR externo, SRE)",
+    "INFRA_MISSING": "Missing Cloud Resource (Dataset, Bucket, Secret or DML Table 404)",
+    "IAM_PERMISSION": "Cloud Permission Denied (IAM BigQuery, Drive Sheets 403, Service Account)",
+    "UPSTREAM_UNREADY": "Incomplete Upstream Dependency (Table 0 rows, Predecessor unstarted)",
+    "WAVE_INVERSION": "Backlog Topological Misalignment (Wave Inversion, Duplicate Card)",
+    "CODE_OR_SYNTAX": "Code or Contract Inconsistency (Dataform syntax, types, primary keys)",
+    "AWAITING_HUMAN": "Awaiting Human Decision or Business Approval (PR merge, architecture, SRE)",
 }
 
 # Legacy IMP_C01-C40 to 6 Macro-Causes Mapping for full backward compatibility
@@ -285,28 +285,28 @@ Return strict JSON conforming to the requested schema.
         # Default classification into the 6 Macro-Causes
         if "iam" in history or "permission" in history or "403" in history:
             code = "IAM_PERMISSION"
-            detail = "Falta de permissão de leitura cross-project IAM ou compartilhamento de Drive."
+            detail = "Missing cross-project IAM read permission or Google Drive sheet share."
         elif "dataset" in history or "404" in history or "bucket" in history or "secret" in history:
             code = "INFRA_MISSING"
-            detail = "Recurso de infraestrutura (Dataset/Bucket/Secret) não encontrado no GCP (404)."
-        elif "wave" in history or "inversão" in history or "duplicat" in history:
+            detail = "Infrastructure resource (Dataset/Bucket/Secret) not found in GCP (404)."
+        elif "wave" in history or "invers" in history or "duplicat" in history:
             code = "WAVE_INVERSION"
-            detail = "Inversão topológica de onda ou card duplicado no backlog."
-        elif "approval" in history or "definir" in history or "aguardando" in history or "pr" in history:
+            detail = "Topological wave inversion or duplicate work item in backlog."
+        elif "approval" in history or "defin" in history or "awaiting" in history or "pr" in history:
             code = "AWAITING_HUMAN"
-            detail = "Aguardando aprovação humana, definição de arquitetura ou merge de PR de infraestrutura."
+            detail = "Awaiting human approval, architectural decision, or infrastructure PR merge."
         elif "syntax" in history or "compile" in history or "assertion" in history:
             code = "CODE_OR_SYNTAX"
-            detail = "Erro de sintaxe Dataform ou falha de asserção de qualidade."
+            detail = "Dataform compilation error or quality assertion failure."
         else:
             code = "UPSTREAM_UNREADY"
-            detail = "Tabela de origem upstream ainda não materializada ou com 0 linhas no DW."
+            detail = "Upstream source table not yet materialized or contains 0 rows in DW."
 
         return {
             "canonical_code": code,
             "canonical_title": CANONICAL_IMPEDIMENT_TAXONOMY.get(code, "General Impediment"),
             "root_cause_detail": detail,
-            "executive_summary": f"Card retido em impedimento classificado como [{code}] ({CANONICAL_IMPEDIMENT_TAXONOMY.get(code)}): {detail}",
+            "executive_summary": f"Card trapped in impediment classified as [{code}] ({CANONICAL_IMPEDIMENT_TAXONOMY.get(code)}): {detail}",
             "confidence_score": 0.98,
             "actionable_inputs": {
                 "upstream_card_ids": upstream_cards or ["CARD-812"],
@@ -317,13 +317,13 @@ Return strict JSON conforming to the requested schema.
                 "required_secrets": ["s-db-credentials-lake"],
                 "required_gcs_buckets": ["gs://acme-landing-lakehouse"],
                 "github_prs_to_watch": ["https://github.com/acme/terraform-infra/pull/402"],
-                "awaiting_human_approval": "approval" in history or "aguardando resposta" in history,
+                "awaiting_human_approval": "approval" in history or "awaiting" in history,
             },
             "suspicions_to_investigate": [
-                "Verificar se o card predecessor já foi concluído no board.",
-                "Verificar se os datasets BigQuery antes 404 já foram provisionados.",
-                "Verificar se a tabela upstream já existe e contém linhas populadas (num_rows > 0).",
-                "Verificar se o Pull Request de infraestrutura já sofreu merge.",
+                "Verify whether predecessor card has been completed on the board.",
+                "Verify whether BigQuery datasets previously returning 404 have been provisioned.",
+                "Verify whether upstream table exists and contains populated rows (num_rows > 0).",
+                "Verify whether infrastructure Pull Request has been merged.",
             ],
         }
 
