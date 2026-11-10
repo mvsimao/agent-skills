@@ -386,7 +386,7 @@ class ContextLockResolver:
             "ast_reconciliation": ast_report,
             "legacy_source_code": legacy_sql_or_code,
             "is_locked": True,
-            "lock_version": "2.1.0"
+            "lock_version": "2.2.0"
         }
 
         out_dir = Path(output_dir)

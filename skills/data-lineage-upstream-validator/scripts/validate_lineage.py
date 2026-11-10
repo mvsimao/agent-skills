@@ -117,15 +117,15 @@ def run_lineage_validation(
     has_unlinked_predecessors = any(br.predecessor_ticket_id is None and br.required_table for br in backlog_recs)
 
     if not has_unstarted_task_dep and not has_unpopulated and not has_missing_unresolved and not has_link_anomalies and not has_unlinked_predecessors:
-        traffic_light = "🟢 VERDE (READY)"
+        traffic_light = "🟢 GREEN (READY)"
         gate_verdict = "APPROVED (100% of sources exist/populated & zero link issues)"
         is_ready = True
     elif has_unstarted_task_dep and not has_missing_unresolved and not has_link_anomalies:
-        traffic_light = "🟡 AMARELO (TASK DEPENDENCY)"
+        traffic_light = "🟡 YELLOW (TASK DEPENDENCY)"
         gate_verdict = "WAITING FOR PREDECESSOR TASK (Upstream card mapped but not yet completed)"
         is_ready = False
     else:
-        traffic_light = "🔴 VERMELHO (BLOCKED / GOVERNANCE GAP)"
+        traffic_light = "🔴 RED (BLOCKED / GOVERNANCE GAP)"
         gate_verdict = "HARD BLOCKER (Orphan source without producer, unpopulated table, or link anomaly)"
         is_ready = False
 
@@ -156,6 +156,19 @@ def run_lineage_validation(
         metric = f"{s.num_rows:,} rows" if s.num_rows is not None else (s.contract_file or "N/A")
         imp_note = " [SA Impersonated]" if s.impersonation_used else ""
         md.append(f"| `{s.project_id}.{s.dataset_id}.{s.table_id}` | `{s.layer_found}` | {status_icon} `{s.status}`{imp_note} | `{metric}` | {s.details} |")
+
+    # Wave 1 Physical Schema Detail Section
+    live_physical_sources = [s for s in statuses if s.live_bq_schema is not None]
+    if live_physical_sources:
+        md.append("\n### 🔬 Live Physical BigQuery Metadata Inspection (Wave 1):")
+        for s in live_physical_sources:
+            part_info = f"`{s.live_partition_field}` ({s.live_partition_type or 'DAY'})" if s.live_partition_field else "None"
+            req_filter_info = "Yes (Mandatory)" if s.require_partition_filter else "No"
+            clustering_info = f"`{', '.join(s.clustering_fields)}`" if s.clustering_fields else "None"
+            md.append(f"- **Table `{s.dataset_id}.{s.table_id}`:**")
+            md.append(f"  - Physical Columns: `{len(s.live_bq_schema)} fields inspected`")
+            md.append(f"  - Partition Field: {part_info} | `require_partition_filter`: **{req_filter_info}**")
+            md.append(f"  - Clustering Keys: {clustering_info}")
     md.append("")
 
     if discovered_producers:

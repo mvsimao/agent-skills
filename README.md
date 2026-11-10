@@ -1,14 +1,24 @@
-# 🚀 Autonomous Enterprise Data Platform Modernization Suite (Release v2.1.0)
+# 🚀 Autonomous Enterprise Data Platform Modernization Suite (Release v2.2.0)
 ### AI Agent Skills & Deterministic CLI Tools: Databricks (Spark / Delta) ➔ GCP BigQuery + Dataform + Airflow
 
-[![Release](https://img.shields.io/badge/Release-v2.1.0-blue.svg)](#-release-v210-highlights)
+[![Release](https://img.shields.io/badge/Release-v2.2.0-blue.svg)](#-release-v220-highlights-wave-1-2--3-enterprise-refinements)
 [![Architecture](https://img.shields.io/badge/Architecture-.py--First%20%2B%20Surgical%20LLM-blue.svg)](#-solution-architecture)
 [![GCP Native](https://img.shields.io/badge/GCP-BigQuery%20%7C%20Dataform%20%7C%20Airflow-orange.svg)](#)
 [![Cycle Time Speedup](https://img.shields.io/badge/Speedup-95x%20to%20280x%20(-99.6%25)-green.svg)](#-1-performance-and-finops-efficiency-audited-benchmark)
 [![LLM Token Savings](https://img.shields.io/badge/Token%20Savings-98%25%20to%20100%25-brightgreen.svg)](#-1-performance-and-finops-efficiency-audited-benchmark)
-[![Quality Gate](https://img.shields.io/badge/Gate%20Approval-100%25%20(BL__00--BL__15%20%2B%2037%20Rules%20%2B%20S1--S6)-red.svg)](#-2-architectural-quality-semantic-equivalence--zero-rework-guardrails)
+[![Quality Gate](https://img.shields.io/badge/Gate%20Approval-100%25%20(BL__00--BL__19%20%2B%2037%20Rules%20%2B%20S1--S6)-red.svg)](#-2-architectural-quality-semantic-equivalence--zero-rework-guardrails)
 [![Enterprise Scale](https://img.shields.io/badge/Scale-%2B2%2C400%20Backlog%20Items-purple.svg)](#-3-flow-governance-autonomous-unblocking--critical-path-analysis-2400-items)
 [![Compliance](https://img.shields.io/badge/Sanitization-100%25%20Agnostic%20%26%20Compliant-success.svg)](#)
+
+---
+
+## 🌟 Release v2.2.0 Highlights: Wave 1, 2 & 3 Enterprise Refinements
+
+Release **v2.2.0** incorporates the audited enterprise capabilities across **Waves 1, 2, and 3**:
+- **Wave 1 (Live Physical BigQuery Inspection & Dry-Run):** In addition to static definitions, directly queries BigQuery API (`tables.get`) to extract live physical schemas (`live_bq_schema`), physical partition fields and types (`live_partition_field`, `live_partition_type`), partition filter requirements (`require_partition_filter`), and clustering keys (`clustering_fields`). Injects physical schemas into surgical prompts, calculates column drift (`schema_drift_missing_in_bq`), and validates compiled SQL with zero bytes processed via BigQuery Live Dry-Run (`dryRun: True`) using a **Smart Virtual Target Subquery Wrapper**.
+- **Wave 2 (AST x Catalog Reconciliation & Discovery):** Reconciles AST and `%run` library dependencies to capture auxiliary join tables omitted in static catalogs (`ast_reconciliation`), auto-discovering their physical coordinates in BigQuery candidate projects and blocking unmapped upstream reads (`[AST_UNMAPPED_UPSTREAM_GUARD]`).
+- **Wave 3 (Closed Self-Healing Loop & 5/5 Confidence Scorecard):** Features autonomous closed-loop translation and self-healing powered by `gemini-3.8-flash` on Vertex AI (`--auto-llm` / `--self-heal-llm`) in up to 3 retries, with automatic traceback injection and SSOT coordinate re-locking. Emits an objective **5/5 Confidence Scorecard** (`*_ready_confidence_report.json`) and enforces a strict governance lock keeping newly refined cards in **`Refining`** (tag **`Refined`**) for final human engineering sign-off.
+- **Full Semantic Expansion (BL_00 to BL_19):** Guarantees zero regression with `BL_01_ROLLING_WINDOW_TABLE_WIPES_HISTORY`, `BL_16_DUPLICATE_UPSTREAM_UNION_ALL`, `BL_17_UNPRUNED_MASSIVE_TABLE_SCAN`, `BL_17_RAID_D37_EVENTTRACKS_WHITESPACE_NORM`, `BL_18_GROUP_BY_PARSED_ALIAS_SHADOWING`, and `BL_19_MULTI_CSV_EXPORT_FILENAME_MISMATCH`.
 
 ---
 
